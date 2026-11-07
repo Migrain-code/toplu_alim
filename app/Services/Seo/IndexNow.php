@@ -1,0 +1,84 @@
+<?php
+
+namespace App\Services\Seo;
+
+use App\Support\AutomationLog;
+use Illuminate\Support\Facades\Http;
+use Throwable;
+
+/**
+ * IndexNow: yeni/güncellenen adresi Bing, Yandex, Seznam, Naver… arama motorlarına
+ * ANINDA bildirir (tek uç nokta hepsine dağıtır). Google IndexNow'u kullanmaz; Google
+ * için site haritası + Search Console (ve varsa Indexing API) geçerlidir.
+ *
+ * Anahtar .env'de (INDEXNOW_KEY, 8–128 hex karakter). Doğrulama dosyası ayrıca
+ * yüklenmez: /{anahtar}.txt rotası anahtarı döndürür.
+ * Anahtar yoksa servis sessizce devre dışıdır; site çalışmaya devam eder.
+ */
+class IndexNow
+{
+    public const ENDPOINT = 'https://api.indexnow.org/indexnow';
+
+    /** IndexNow tek istekte en fazla 10.000 adres kabul eder. */
+    public const BATCH = 10000;
+
+    public function key(): ?string
+    {
+        $key = trim((string) config('seo.indexnow.key'));
+
+        return preg_match('/^[a-f0-9]{8,128}$/i', $key) ? $key : null;
+    }
+
+    public function enabled(): bool
+    {
+        return $this->key() !== null;
+    }
+
+    /**
+     * @param  array<int, string>  $urls
+     * @return int bildirilen adres sayısı (devre dışıysa 0)
+     */
+    public function submit(array $urls): int
+    {
+        $key = $this->key();
+        // Host ve anahtar adresi APP_URL'den: url() şemayı istekten alır ve proxy
+        // arkasında "http://" üretebilir; IndexNow keyLocation'ı birebir doğrular.
+        $root = rtrim((string) config('app.url'), '/') ?: rtrim(url('/'), '/');
+        $host = parse_url($root, PHP_URL_HOST);
+
+        // Yalnız bu sitenin adresleri: IndexNow farklı host içeren listeyi tümden reddeder.
+        $urls = array_values(array_unique(array_filter($urls, fn ($u) => parse_url($u, PHP_URL_HOST) === $host)));
+
+        if (! $key || $urls === [] || in_array($host, ['localhost', '127.0.0.1'], true)) {
+            return 0;
+        }
+
+        $sent = 0;
+
+        foreach (array_chunk($urls, self::BATCH) as $chunk) {
+            try {
+                $response = Http::timeout(15)->acceptJson()->post(self::ENDPOINT, [
+                    'host' => $host,
+                    'key' => $key,
+                    'keyLocation' => $root.'/'.$key.'.txt',
+                    'urlList' => $chunk,
+                ]);
+
+                // 200 = kabul, 202 = alındı (anahtar doğrulaması bekliyor).
+                if (in_array($response->status(), [200, 202], true)) {
+                    $sent += count($chunk);
+                } else {
+                    AutomationLog::error('seo.indexnow', 'IndexNow reddetti', ['status' => $response->status(), 'body' => mb_substr($response->body(), 0, 300)]);
+                }
+            } catch (Throwable $e) {
+                AutomationLog::error('seo.indexnow', $e->getMessage());
+            }
+        }
+
+        if ($sent > 0) {
+            AutomationLog::info('seo.indexnow', ['submitted' => $sent]);
+        }
+
+        return $sent;
+    }
+}

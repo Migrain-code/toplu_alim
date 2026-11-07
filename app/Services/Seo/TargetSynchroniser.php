@@ -1,0 +1,95 @@
+<?php
+
+namespace App\Services\Seo;
+
+use App\Models\Brand;
+use App\Models\Page;
+use App\Models\Province;
+use App\Models\SeoTarget;
+use App\Models\Service;
+use App\Support\PathNormalizer;
+
+/**
+ * Mevcut içerikten SEO hedef sayfalarını üretir/günceller (spec §3.1).
+ *
+ * Hedefler UYDURULMAZ: yalnız gerçekten var olan sayfalardan türetilir.
+ * Elle eklenen "custom" hedeflere dokunulmaz.
+ */
+class TargetSynchroniser
+{
+    /** @return array{created: int, updated: int, deactivated: int} */
+    public function sync(): array
+    {
+        $created = $updated = 0;
+        $seen = [];
+
+        $rows = [
+            ['home', 'Ana Sayfa', '/', null, null, true],
+            ['brand', 'Markalar (liste)', '/markalar', null, null, true],
+        ];
+
+        foreach (Service::all() as $service) {
+            $rows[] = ['service', $service->title, '/'.$service->slug, 'service', $service->getKey(), (bool) $service->is_active];
+        }
+
+        // Hizmet sayfasına bağlı markanın kendi adresi yok; hedefi de olmaz.
+        foreach (Brand::query()->whereNull('service_id')->get() as $brand) {
+            $rows[] = ['brand', $brand->heading, $brand->path(), 'brand', $brand->getKey(), (bool) $brand->is_active];
+        }
+
+        $services = Service::all();
+
+        foreach (Province::all() as $province) {
+            $rows[] = ['province', $province->name.' (il)', '/'.$province->slug, 'province', $province->getKey(), (bool) $province->is_active];
+
+            // İl × hizmet sayfaları (/istanbul/toplu-telefon-alimi, /istanbul/stok-fazlasi-…).
+            // Kendi modelleri yoktur (içerik hizmet + il metninden oluşur), content_type boş
+            // kalır; ama "{il} toplu telefon alanlar" gibi kelimelerin gerçek sahibi bu adrestir.
+            foreach ($services as $service) {
+                $rows[] = [
+                    'province_service',
+                    $province->name.' '.$service->title,
+                    '/'.$province->slug.'/'.$service->slug,
+                    null,
+                    null,
+                    (bool) $province->is_active && (bool) $service->is_active,
+                ];
+            }
+        }
+
+        // İlçeler hedef ÜRETMEZ: ilçeler bot SEO kapsamı dışında (yalnız iller). Eski ilçe
+        // hedefleri aşağıdaki "kaynağı kalmayan" kuralıyla pasife alınır.
+
+        foreach (Page::all() as $page) {
+            $rows[] = ['page', $page->title, '/'.$page->slug, 'page', $page->getKey(), (bool) $page->is_active];
+        }
+
+        foreach ($rows as [$type, $name, $url, $contentType, $contentId, $active]) {
+            $hash = PathNormalizer::hash($url);
+            $seen[] = $hash;
+
+            $target = SeoTarget::firstOrNew(['url_hash' => $hash]);
+            $exists = $target->exists;
+
+            $target->fill([
+                'name' => $name,
+                'url' => $url,
+                'target_type' => $type,
+                'content_type' => $contentType,
+                'content_id' => $contentId,
+                'status' => $active,
+            ])->save();
+
+            $exists ? $updated++ : $created++;
+        }
+
+        // Kaynağı kalmayan otomatik hedefler pasife alınır — SİLİNMEZ (spec §10.9).
+        $deactivated = SeoTarget::query()
+            ->where('target_type', '!=', 'custom')
+            ->whereNotIn('url_hash', $seen)
+            ->where('status', true)
+            ->update(['status' => false]);
+
+        return ['created' => $created, 'updated' => $updated, 'deactivated' => $deactivated];
+    }
+}

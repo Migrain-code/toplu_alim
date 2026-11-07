@@ -1,0 +1,87 @@
+// ---------------------------------------------------------------
+// Tema değişkenleri (Bootstrap 5 override) — Toptan Elektronik Alımı
+// Palet: koyu lacivert zemin (güven) + elektrik mavisi (marka) + amber "Hemen Ara"
+// (en yüksek kontrastlı eylem; sitenin ana dönüşümü telefon araması).
+// ---------------------------------------------------------------
+$ink:        #0a1226;
+$navy:       #0d1b3e;
+$navy-dark:  #070f26;
+$blue:       #2b59ff;
+$blue-dark:  #1a42dd;
+$sky:        #e9efff;
+$cyan:       #20c4ff;
+$amber:      #ffb81c;
+$amber-dark: #f0a500;
+$whatsapp:   #25d366;
+$whatsapp-dark: #1ebe5a;
+$slate:      #4b5567;
+$mist:       #f3f6fc;
+$line:       #e2e8f3;
+
+// Eski şablon adlarıyla uyum: $orange = amber CTA.
+$orange:      $amber;
+$orange-dark: $amber-dark;
+
+$primary:   $blue;
+$secondary: $amber;
+$success:   $whatsapp;
+$dark:      $ink;
+$light:     $mist;
+$body-color: $slate;
+$body-bg:   #fff;
+
+$headings-color: $ink;
+$font-family-sans-serif: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+$headings-font-family: $font-family-sans-serif;
+$headings-font-weight: 800;
+$font-size-base: 1rem;
+$line-height-base: 1.7;
+$h1-font-size: 2.75rem;
+$h2-font-size: 2.125rem;
+$h3-font-size: 1.375rem;
+$h4-font-size: 1.15rem;
+$headings-line-height: 1.2;
+
+$link-color: $blue;
+$link-hover-color: $blue-dark;
+$link-decoration: none;
+
+$border-radius: .625rem;
+$border-radius-lg: 1rem;
+$btn-border-radius: .75rem;
+$btn-border-radius-lg: .875rem;
+$btn-padding-y: .8rem;
+$btn-padding-x: 1.4rem;
+$btn-font-weight: 700;
+$btn-font-size: .95rem;
+
+$input-border-color: #d3dbe9;
+$input-border-radius: .75rem;
+$input-focus-border-color: $blue;
+$input-focus-box-shadow: 0 0 0 .22rem rgba($blue, .15);
+$input-padding-y: .72rem;
+$input-padding-x: .95rem;
+$form-select-border-radius: .75rem;
+$form-select-focus-border-color: $blue;
+$form-select-focus-box-shadow: $input-focus-box-shadow;
+
+$accordion-button-active-bg: #fff;
+$accordion-button-active-color: $ink;
+$accordion-button-focus-box-shadow: none;
+$accordion-border-color: $line;
+$accordion-border-radius: 1rem;
+$accordion-button-padding-y: 1.1rem;
+
+$breadcrumb-divider: quote("›");
+$dropdown-border-color: $line;
+$dropdown-border-radius: 1rem;
+$dropdown-link-hover-bg: $mist;
+$dropdown-link-hover-color: $blue;
+$dropdown-link-active-bg: $mist;
+$dropdown-link-active-color: $blue;
+$dropdown-padding-y: .5rem;
+$dropdown-item-padding-y: .55rem;
+$dropdown-item-padding-x: 1.1rem;
+
+$offcanvas-horizontal-width: 330px;
+$enable-negative-margins: true;

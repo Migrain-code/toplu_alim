@@ -1,0 +1,47 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Services\Seo\IndexNow;
+use App\Support\SitemapUrls;
+use Illuminate\Console\Command;
+
+/**
+ * Elle IndexNow bildirimi.
+ *
+ *   php artisan seo:indexnow --all            site haritasındaki tüm dizine açık adresler
+ *   php artisan seo:indexnow https://…/a …    yalnız verilen adresler
+ *
+ * Yayın sonrası ilk kurulumda --all bir kez çalıştırılır; sonrasında yeni yazı ve
+ * metni açılan bölgeler gözlemci (IndexNowObserver) ile otomatik bildirilir.
+ */
+class SubmitIndexNow extends Command
+{
+    protected $signature = 'seo:indexnow {urls?* : Bildirilecek tam adresler} {--all : Site haritasındaki tüm adresler}';
+
+    protected $description = 'Adresleri IndexNow (Bing, Yandex…) ile anında bildirir';
+
+    public function handle(IndexNow $indexNow): int
+    {
+        if (! $indexNow->enabled()) {
+            $this->warn('INDEXNOW_KEY tanımlı değil (8–128 karakter hex). .env dosyasına ekleyin.');
+
+            return self::FAILURE;
+        }
+
+        $urls = $this->option('all')
+            ? array_column(SitemapUrls::all(), 'loc')
+            : (array) $this->argument('urls');
+
+        if ($urls === []) {
+            $this->warn('Adres verilmedi. --all ya da tam adres(ler) kullanın.');
+
+            return self::INVALID;
+        }
+
+        $sent = $indexNow->submit($urls);
+        $this->info("{$sent} / ".count($urls).' adres bildirildi.');
+
+        return $sent > 0 ? self::SUCCESS : self::FAILURE;
+    }
+}

@@ -1,0 +1,107 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Blog;
+use App\Models\BlogCategory;
+use App\Models\Service;
+use App\Support\SchemaOrg;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\View\View;
+
+class BlogController extends Controller
+{
+    public function index(): View
+    {
+        return view('blog.index', [
+            'posts' => Blog::query()->published()->with('category')->orderByDesc('publish_at')->orderByDesc('id')->paginate(9),
+            'categories' => BlogCategory::query()->active()->ordered()->withCount('publishedPosts')->get(),
+            'activeCategory' => null,
+            'metaTitle' => 'Blog | Toplu Elektronik Satışı Rehberi',
+            'metaDescription' => 'Stok fazlası, depo boşaltma, tasfiye ve toplu telefon, tablet, bilgisayar satışı hakkında pratik bilgiler ve rehberler.',
+            'canonical' => route('blog.index'),
+            'jsonLd' => [SchemaOrg::breadcrumbs([
+                ['name' => 'Ana Sayfa', 'url' => url('/')],
+                ['name' => 'Blog', 'url' => route('blog.index')],
+            ])],
+        ]);
+    }
+
+    public function category(BlogCategory $category): View
+    {
+        abort_unless($category->is_active, 404);
+
+        $breadcrumbs = [
+            ['name' => 'Ana Sayfa', 'url' => url('/')],
+            ['name' => 'Blog', 'url' => route('blog.index')],
+            ['name' => $category->name, 'url' => $category->url],
+        ];
+
+        return view('blog.index', [
+            'posts' => $category->posts()->published()->with('category')->orderByDesc('publish_at')->paginate(9),
+            'categories' => BlogCategory::query()->active()->ordered()->withCount('publishedPosts')->get(),
+            'activeCategory' => $category,
+            'metaTitle' => $category->meta_title ?: $category->name.' | Blog',
+            'metaDescription' => $category->meta_description ?: $category->description,
+            'canonical' => $category->url,
+            'jsonLd' => [SchemaOrg::breadcrumbs($breadcrumbs)],
+        ]);
+    }
+
+    public function show(string $slug): View
+    {
+        $post = Blog::query()->where('slug', $slug)->with('category')->firstOrFail();
+
+        // Yayında değilse: birleştirilmişse 301, değilse 404.
+        if (! $post->is_published) {
+            abort(404);
+        }
+
+        $post->forceFill(['views' => $post->views + 1])->saveQuietly();
+
+        $breadcrumbs = [
+            ['name' => 'Ana Sayfa', 'url' => url('/')],
+            ['name' => 'Blog', 'url' => route('blog.index')],
+        ];
+
+        if ($post->category) {
+            $breadcrumbs[] = ['name' => $post->category->name, 'url' => $post->category->url];
+        }
+
+        $breadcrumbs[] = ['name' => $post->title, 'url' => $post->url];
+
+        $jsonLd = [
+            SchemaOrg::breadcrumbs($breadcrumbs),
+            SchemaOrg::article($post),
+        ];
+
+        if ($faq = SchemaOrg::faq($post->faqs ?? [])) {
+            $jsonLd[] = $faq;
+        }
+
+        return view('blog.show', [
+            'post' => $post,
+            'related' => Blog::query()->published()
+                ->when($post->blog_category_id, fn ($q) => $q->where('blog_category_id', $post->blog_category_id))
+                ->whereKeyNot($post->getKey())
+                ->orderByDesc('publish_at')->limit(3)->get(),
+            'services' => Service::query()->active()->ordered()->get(),
+            'breadcrumbs' => $breadcrumbs,
+            'metaTitle' => $post->meta_title ?: $post->title,
+            'metaDescription' => $post->meta_description ?: $post->summary,
+            'canonical' => $post->url,
+            'ogImage' => $post->image_url,
+            'jsonLd' => $jsonLd,
+        ]);
+    }
+
+    public function feed(): Response
+    {
+        $xml = Cache::remember('blog.feed', now()->addMinutes(30), fn () => view('blog.feed', [
+            'posts' => Blog::query()->published()->with('category')->orderByDesc('publish_at')->limit(30)->get(),
+        ])->render());
+
+        return response($xml, 200)->header('Content-Type', 'application/rss+xml; charset=UTF-8');
+    }
+}
