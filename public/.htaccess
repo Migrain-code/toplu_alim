@@ -5,6 +5,12 @@
 
     RewriteEngine On
 
+    # Kök .htaccess istekleri buraya iç yönlendirmeyle getirir. Ziyaretçi adreste /public/
+    # yazdıysa önekisiz adrese kalıcı yönlendir (kopya adres oluşmasın). Belge kökü
+    # doğrudan public/ ise THE_REQUEST'te /public/ geçmez ve kural hiç çalışmaz.
+    RewriteCond %{THE_REQUEST} \s/public/([^\s?]*) [NC]
+    RewriteRule ^ /%1 [R=301,L,NE]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]

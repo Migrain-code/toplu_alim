@@ -1,0 +1,32 @@
+# Paylaşımlı hosting (cPanel): alan adının belge kökü proje kökünü gösteriyorsa her
+# istek public/ klasörüne yönlendirilir. Böylece .env, vendor/, storage/, database/,
+# README gibi dosyalar internetten erişilemez. Belge kökü cPanel'den doğrudan public/
+# klasörüne ayarlanırsa bu dosya devre dışı kalır (zararsızdır).
+
+Options -Indexes
+
+# Nokta ile başlayan dosyalar (.env, .git, .htaccess…) hiçbir koşulda sunulmaz.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # .git klasörü ve içi: doğrudan 404.
+    RewriteRule (^|/)\.git(/|$) - [R=404,L]
+
+    # Ziyaretçi adreste /public/ yazmışsa önekisiz adrese kalıcı yönlendir: /public/istanbul
+    # gibi kopya adresler oluşmasın (THE_REQUEST yalnız tarayıcının istediği adrestir).
+    RewriteCond %{THE_REQUEST} \s/public/([^\s?]*) [NC]
+    RewriteRule ^ /%1 [R=301,L,NE]
+
+    # Sondaki "/" burada temizlenir; public/.htaccess'teki aynı kural iç yönlendirmeden
+    # sonra çalışıp ziyaretçiyi /public/... adresine atıyordu.
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [R=301,L]
+
+    # Zaten public/ içine yönlenmiş isteğe tekrar dokunma (döngü olmasın).
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
