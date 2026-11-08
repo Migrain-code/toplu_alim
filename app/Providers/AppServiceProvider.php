@@ -35,6 +35,7 @@ use Illuminate\Queue\Worker;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -105,6 +106,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Carbon::setLocale(config('app.locale'));
+
+        // APP_URL https ise tüm üretilen adresler (canonical, site haritası, IndexNow) https
+        // olur; istek http ile gelse bile kopya http adresleri yayılmaz.
+        if (str_starts_with((string) config('app.url'), 'https://')) {
+            URL::forceScheme('https');
+        }
 
         $this->registerPolicies();
 

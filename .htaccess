@@ -13,6 +13,13 @@ Options -Indexes
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # SSL kurulu: http isteği kalıcı olarak https'e yönlenir (tek kopya adres).
+    # X-Forwarded-Proto: hosting önünde vekil sunucu varsa döngü olmasın.
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L,NE]
+
     # .git klasörü ve içi: doğrudan 404.
     RewriteRule (^|/)\.git(/|$) - [R=404,L]
 
