@@ -8,6 +8,7 @@ use App\Models\District;
 use App\Models\InternalLinkRule;
 use App\Models\Province;
 use App\Models\Setting;
+use App\Services\Ai\AiException;
 use App\Services\Ai\RegionContentEnricher;
 use App\Services\InternalLink\RuleBuilder;
 use App\Services\Seo\TargetSynchroniser;
@@ -178,6 +179,28 @@ class SeoCoverageTest extends TestCase
 
         $this->assertGreaterThanOrEqual(600, $result['words_after']);
         Http::assertSentCount(2);
+        // İlk metin korunur, yeni bölümler sona eklenir.
+        $this->assertSame(2, substr_count((string) Province::where('slug', 'manisa')->value('content'), '<h2>Teklif süreci</h2>'));
+    }
+
+    public function test_a_longer_existing_text_is_never_replaced_by_a_shorter_one(): void
+    {
+        config(['seo.ai.api_key' => 'test-key', 'seo.ai.base_url' => 'https://openrouter.ai/api/v1']);
+        $long = '<p>'.str_repeat('Ankara kurumlarından cihaz alıyoruz. ', 250).'</p>';
+        Province::where('slug', 'ankara')->update(['content' => $long]);
+
+        Http::fake(['openrouter.ai/*' => Http::response(['choices' => [['message' => ['content' => json_encode([
+            'body_html' => '<p>'.str_repeat('Kısa metin kelime. ', 110).'</p>', 'meta_title' => 'Ankara', 'meta_description' => 'x',
+        ], JSON_UNESCAPED_UNICODE)]]]])]);
+
+        try {
+            app(RegionContentEnricher::class)->enrich(Province::where('slug', 'ankara')->firstOrFail());
+            $this->fail('kısa metin kaydedilmemeliydi');
+        } catch (AiException $e) {
+            $this->assertStringContainsString('kısa', $e->getMessage());
+        }
+
+        $this->assertSame($long, Province::where('slug', 'ankara')->value('content'));
     }
 
     public function test_enrich_command_accepts_brands(): void

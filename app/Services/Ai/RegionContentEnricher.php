@@ -67,6 +67,12 @@ class RegionContentEnricher
             $body .= "\n".trim($notice[0]);
         }
 
+        // Mevcut daha uzun metin daha kısa bir AI metniyle DEĞİŞTİRİLMEZ (canlıda Ankara
+        // 433 → 310 kelimeye düşmüştü).
+        if ($before > 0 && $this->sanitizer->wordCount($body) < $before) {
+            throw new AiException('Yeni metin mevcut metinden kısa ('.$this->sanitizer->wordCount($body).' < '.$before.' kelime), kaydedilmedi.');
+        }
+
         $updates = [$this->bodyField($model) => $body];
 
         // Meta açıklama 70-155 aralığına çekilir.
@@ -93,41 +99,55 @@ class RegionContentEnricher
         return ['words_before' => $before, 'words_after' => $after, 'h2' => preg_match_all('/<h2[\s>]/i', $body)];
     }
 
-    /** Skorun "iyi içerik" eşiği 600 kelime; altında kalan metin bir tur daha genişletilir. */
-    public const EXPAND_BELOW = 550;
+    /** Skorun "iyi içerik" eşiği 600 kelime; altında kalan metne yeni bölüm eklenir. */
+    public const EXPAND_BELOW = 600;
 
     /**
-     * Modeller istenen kelime sayısını çoğu zaman tutturmaz (canlıda 650-800 istendi,
-     * ~300 geldi). Kısa kalan metin İKİNCİ bir çağrıyla, içeriği korunarak uzatılır.
-     * Genişletme başarısız olur ya da kısalırsa ilk metin kullanılır — iş asla bozulmaz.
+     * Modeller istenen kelime sayısını tutturmaz (canlıda 650-800 istendi, ~300 geldi) ve
+     * "genişlet" denince metni baştan yazıp yine kısa bırakır. Bu yüzden modelden YALNIZ
+     * eklenecek yeni H2 bölümleri istenir ve mevcut metnin sonuna eklenir: metin her
+     * turda kesin uzar. En fazla iki tur; çağrı başarısız olursa eldeki metin kalır.
      */
     private function expandIfShort(string $body, string $system, array $meta): string
     {
-        $words = $this->sanitizer->wordCount($body);
+        for ($round = 1; $round <= 2; $round++) {
+            $words = $this->sanitizer->wordCount($body);
 
-        if ($words >= self::EXPAND_BELOW) {
-            return $body;
+            if ($words >= self::EXPAND_BELOW) {
+                break;
+            }
+
+            preg_match_all('/<h2[^>]*>(.*?)<\/h2>/su', $body, $m);
+            $need = max(250, 680 - $words);
+
+            $user = implode("\n", [
+                'GÖREV: Aşağıdaki sayfa metni '.$words.' kelime. Metnin SONUNA eklenecek 2-3 YENİ bölüm yaz.',
+                '- Toplam EN AZ '.$need.' kelime. Her bölüm <h2> başlık + 2-3 paragraf (gerekirse <ul>).',
+                '- Mevcut başlıkları TEKRARLAMA: '.implode(' | ', array_map(fn ($h) => trim(strip_tags($h)), $m[1] ?? [])),
+                '- Konu önerileri: satış öncesi hazırlık, veri silme ve hesap kilitleri, lot/stok listesi hazırlama,',
+                '  ürün durumuna göre değerlendirme, teslim alma ve paketleme, fatura/evrak, sık yapılan hatalar.',
+                '- Yeni bilgi UYDURMA; rakam, fiyat, süre VERME. Mevcut metni çıktıya KOYMA, yalnız yeni bölümler.',
+                '- Çıktı yalnız JSON: {"body_html":""}',
+                '',
+                'MEVCUT METİN (bağlam için):',
+                trim(strip_tags($body)),
+            ]);
+
+            try {
+                $payload = $this->ai->json('seo.content', $system, $user, array_merge($meta, ['batch_key' => ($meta['batch_key'] ?? 'enrich').'.expand']));
+                $extra = $this->sanitizer->bodyHtml($payload['body_html'] ?? null);
+            } catch (\Throwable) {
+                break;
+            }
+
+            if ($this->sanitizer->wordCount($extra) < 80) {
+                break;
+            }
+
+            $body = rtrim($body)."\n".$extra;
         }
 
-        $user = implode("\n", [
-            'GÖREV: Aşağıdaki HTML metin '.$words.' kelime; EN AZ 650 kelimeye genişlet.',
-            '- Mevcut tüm paragrafları, H2 başlıklarını ve bilgileri KORU; hiçbir şeyi silme.',
-            '- Her bölüme satıcının işine yarayan somut ayrıntı ekle (hazırlık, teslim alma, ürün durumu, lot, veri silme).',
-            '- Gerekirse bir veya iki yeni <h2> bölümü ekle. Yeni bilgi UYDURMA, rakam/fiyat/süre VERME.',
-            '- Çıktı yalnız JSON: {"body_html":""}',
-            '',
-            'METİN:',
-            $body,
-        ]);
-
-        try {
-            $payload = $this->ai->json('seo.content', $system, $user, array_merge($meta, ['batch_key' => ($meta['batch_key'] ?? 'enrich').'.expand']));
-            $expanded = $this->sanitizer->bodyHtml($payload['body_html'] ?? null);
-        } catch (\Throwable) {
-            return $body;
-        }
-
-        return $this->sanitizer->wordCount($expanded) > $words ? $expanded : $body;
+        return $body;
     }
 
     private function bodyField(Model $model): string
