@@ -50,6 +50,51 @@ class SeoCoverageTest extends TestCase
         $this->assertStringNotContainsString('href=', District::where('slug', 'kadikoy')->value('content'));
     }
 
+    /**
+     * Doğal dilde yazılmış metinde kural ifadesi birebir geçmez; canlıda 125 içerikten 5'i
+     * link alıyordu. Yedek paragraf her sayfaya gerçek iç link kazandırır, ikinci koşuda
+     * tekrar eklenmez, marka hukuki notu en sonda kalır.
+     */
+    public function test_pages_without_matching_anchors_get_a_related_links_paragraph_once(): void
+    {
+        SeoConfig::set('internal_links_enabled', true);
+        SeoConfig::set('internal_links_auto_apply', true);
+        Setting::flush();
+
+        Province::where('slug', 'ankara')->update(['content' => '<p>'.str_repeat('Kurumların yenilediği cihazları adetli olarak satın alıyoruz. ', 30).'</p>']);
+
+        app(TargetSynchroniser::class)->sync();
+        app(RuleBuilder::class)->build();
+
+        $this->artisan('links:apply')->assertSuccessful();
+
+        $ankara = Province::where('slug', 'ankara')->value('content');
+        $this->assertStringContainsString('class="related-links"', $ankara);
+        $this->assertMatchesRegularExpression('#href="/ankara/[a-z-]+"#', $ankara);
+        $this->assertStringNotContainsString('href="/ankara"', $ankara, 'sayfa kendine link vermemeli');
+
+        $apple = Brand::where('slug', 'apple')->value('content');
+        $this->assertStringContainsString('href="/toplu-telefon-alimi"', $apple);
+        $this->assertMatchesRegularExpression('#related-links.*<small>#s', $apple, 'hukuki not sonda kalmalı');
+
+        // İl paragrafları birbirinin kopyası değil.
+        $istanbul = Province::where('slug', 'istanbul')->value('content');
+        preg_match('#<p class="related-links">.*?</p>#s', $istanbul, $a);
+        preg_match('#<p class="related-links">.*?</p>#s', $ankara, $b);
+        $this->assertNotSame(
+            str_replace(['İstanbul', 'istanbul'], '', $a[0] ?? 'x'),
+            str_replace(['Ankara', 'ankara'], '', $b[0] ?? 'y'),
+        );
+
+        // İkinci koşu hiçbir şey değiştirmez.
+        $this->artisan('links:apply')->assertSuccessful();
+        $this->assertSame($ankara, Province::where('slug', 'ankara')->value('content'));
+        $this->assertSame(1, substr_count($ankara, 'related-links'));
+
+        // Metinsiz il boş kalır (paragraf tek başına içerik sayılmaz).
+        $this->assertSame('', (string) Province::where('slug', 'agri')->value('content'));
+    }
+
     public function test_brand_pages_are_enriched_and_keep_the_trademark_notice(): void
     {
         config(['seo.ai.api_key' => 'test-key', 'seo.ai.base_url' => 'https://openrouter.ai/api/v1']);

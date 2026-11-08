@@ -9,6 +9,7 @@ use App\Models\InternalLinkRule;
 use App\Models\Province;
 use App\Models\Service;
 use App\Services\InternalLink\LinkApplier;
+use App\Services\InternalLink\RelatedLinks;
 use App\Support\AutomationLog;
 use App\Support\SeoConfig;
 use Illuminate\Console\Command;
@@ -30,7 +31,7 @@ class ApplyInternalLinks extends Command
 
     protected $description = 'İç link kurallarını yayındaki içeriklerin gövdesine işler';
 
-    public function handle(LinkApplier $applier): int
+    public function handle(LinkApplier $applier, RelatedLinks $related): int
     {
         if (! $applier->enabled()) {
             AutomationLog::summary('links.apply', ['enabled' => false], reasons: ['disabled']);
@@ -73,6 +74,10 @@ class ApplyInternalLinks extends Command
                 }
 
                 $after = $applier->apply($before, $scope, $selfUrl);
+
+                // Kural metinde birebir geçmediyse (doğal dilde yazılmış metinlerin çoğu)
+                // sayfaya özgü bir "ilgili sayfalar" paragrafı eklenir.
+                $after = $related->appendIfNeeded($model, $after);
 
                 if ($after !== $before) {
                     $model->forceFill([$field => $after])->saveQuietly();
