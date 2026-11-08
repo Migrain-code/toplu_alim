@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CommandRun;
 use App\Support\Console\InProcess;
 
 /*
@@ -26,7 +27,7 @@ use App\Support\Console\InProcess;
 InProcess::command('system:heartbeat')->everyMinute()->withoutOverlapping();
 
 // Panelden çalıştırılan komutların 30 günden eski kayıtları silinir.
-InProcess::command('model:prune', ['--model' => [\App\Models\CommandRun::class]])->dailyAt('00:30')->withoutOverlapping();
+InProcess::command('model:prune', ['--model' => [CommandRun::class]])->dailyAt('00:30')->withoutOverlapping();
 
 InProcess::command('sitemap:generate')->dailyAt('01:00')->withoutOverlapping();
 InProcess::command('seo:discovery')->dailyAt('01:10')->withoutOverlapping();
@@ -54,6 +55,8 @@ InProcess::command('seo:score')->dailyAt('02:00')->withoutOverlapping();
  * zaman içinde iyileşmelidir.
  */
 InProcess::command('seo:enrich', ['--limit' => 3])->dailyAt('02:20')->withoutOverlapping();
+// Metinsiz iller (noindex) her gece 10'ar doldurulur; 71 il ~bir haftada biter, sonra iş kalmaz.
+InProcess::command('seo:enrich', ['--thin' => true, '--limit' => 10])->dailyAt('02:40')->withoutOverlapping();
 
 InProcess::command('seo:check-index')->dailyAt('03:00')->withoutOverlapping();
 

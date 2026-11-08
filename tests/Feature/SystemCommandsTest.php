@@ -542,4 +542,27 @@ class SystemCommandsTest extends TestCase
         $this->assertFalse(Route::has('storage.local'));
         $this->assertFalse(Route::has('storage.local.upload'));
     }
+
+    public function test_thin_province_and_indexnow_buttons_are_in_the_catalog(): void
+    {
+        $all = CommandCatalog::all();
+
+        $this->assertSame('seo:enrich', $all['enrich-thin']['command']);
+        $this->assertSame(['--thin' => true, '--limit' => 10], $all['enrich-thin']['arguments']);
+        $this->assertSame('background', $all['enrich-thin']['mode'], 'AI işi web isteğini bekletmemeli');
+
+        $this->assertSame('seo:indexnow', $all['indexnow']['command']);
+        $this->assertSame(['--all' => true], $all['indexnow']['arguments']);
+    }
+
+    public function test_thin_provinces_are_filled_nightly(): void
+    {
+        $events = collect(app(Schedule::class)->events())
+            ->filter(fn ($e) => str_contains((string) $e->description.' '.(string) $e->command, 'seo:enrich'));
+
+        $this->assertTrue(
+            $events->contains(fn ($e) => str_contains((string) $e->description.' '.(string) $e->command, '--thin')),
+            'metinsiz iller için gece görevi olmalı',
+        );
+    }
 }
