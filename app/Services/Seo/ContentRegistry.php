@@ -119,7 +119,7 @@ class ContentRegistry
             bodyHtml: $service->description,
             slug: $service->slug,
             published: (bool) $service->is_active,
-            hasImage: filled($service->image),
+            hasImage: true, // fotoğraf yoksa sayfada ürün illüstrasyonu basılır
             faqCount: count($service->faqs ?? []),
             extraText: array_merge(
                 (array) $service->what_we_do,
@@ -181,7 +181,7 @@ class ContentRegistry
             bodyHtml: $blog->body_html,
             slug: $blog->slug,
             published: $blog->is_published,
-            hasImage: filled($blog->image),
+            hasImage: true, // fotoğraf yoksa yazının başında illüstrasyon basılır
             faqCount: count($blog->faqs ?? []),
             primaryKeyword: $blog->primary_keyword,
             extraText: collect($blog->faqs ?? [])->flatMap(fn ($f) => [$f['question'] ?? '', $f['answer'] ?? ''])->all(),

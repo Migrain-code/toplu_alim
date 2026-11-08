@@ -9,6 +9,7 @@ use App\Models\Service;
 use App\Services\Seo\KeywordSections;
 use App\Support\AutomationLog;
 use App\Support\BusinessContext;
+use App\Support\TurkishText;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -154,14 +155,16 @@ class RegionContentEnricher
             'ALIM ŞEKİLLERİ / ÜRÜN DURUMLARI:',
             '- '.implode("\n- ", $conditions),
             '',
-            'İSTENEN YAPI (400-550 kelime, EN AZ 300):',
+            'İSTENEN YAPI (650-800 kelime, EN AZ 600):',
             '1. Giriş paragrafları (H2 başlığı olmadan): '.$province->name.' genelinde toptan ve toplu elektronik alımı.',
-            '2. <h2>'.$province->name.' genelinde toplu aldığımız ürünler</h2> — ürün grupları ve durumlar',
+            '2. <h2>'.$province->name.' genelinde toplu aldığımız ürünler</h2> — her ürün grubu için 1-2 cümle; durumlar',
             '3. <h2>Kimlerden alım yapıyoruz?</h2> — ilin genel ticari yapısına uygun satıcı tipleri; doğrulanamayan iddia YOK',
             '4. <h2>Hangi ilçelere geliyoruz?</h2> — yalnız yukarıdaki ilçelerden örnek vererek',
             '5. <h2>Teklif süreci</h2> — arama/WhatsApp, ürün listesi, teklif, teslim alma',
             '',
             'Metinde "toplu" ve "toptan" kelimeleri doğal biçimde birlikte geçsin.',
+            'Şu ifadelerden en az üçü metinde AYNEN (bu yazımla) geçsin; her biri bu ilin ilgili sayfasına bağlanır:',
+            $this->anchorPhrases($province),
             'meta_title: en fazla 60 karakter, "'.$province->name.'" geçsin. meta_description: 120-150 karakter.',
         ];
 
@@ -190,7 +193,7 @@ class RegionContentEnricher
             '',
             'HİZMET BÖLGESİ: Türkiye geneli, 81 il.',
             '',
-            'İSTENEN YAPI (400-550 kelime):',
+            'İSTENEN YAPI (650-800 kelime, EN AZ 600):',
             '1. Giriş paragrafları (H2 başlığı olmadan)',
             '2. <h2>Nasıl çalışıyoruz?</h2> — ilk aramadan teslim almaya adım adım',
             '3. <h2>Sık karşılaşılan durumlar</h2> — bu ürün grubuna/duruma özgü gerçek sorular (kilit, veri, eksik aksesuar, karışık lot)',
@@ -204,6 +207,19 @@ class RegionContentEnricher
             implode("\n", $lines),
             ['content_type' => 'service', 'content_id' => $service->getKey(), 'batch_key' => 'enrich.service'],
         ];
+    }
+
+    /**
+     * İç link kurallarıyla BİREBİR aynı ifadeler (RuleBuilder: il adı + küçük harf hizmet
+     * başlığı). Metinde bu yazımla geçerse links:apply ilgili il × hizmet sayfasına bağlar.
+     */
+    private function anchorPhrases(Province $province): string
+    {
+        return Service::query()->active()->ordered()
+            ->whereIn('slug', ['toplu-telefon-alimi', 'toplu-bilgisayar-alimi', 'toplu-tablet-alimi', 'stok-fazlasi-elektronik-alimi', 'toplu-robot-supurge-alimi'])
+            ->get()
+            ->map(fn (Service $s) => '"'.$province->name.' '.TurkishText::lower($s->title).'"')
+            ->implode(', ').'.';
     }
 
     /** @return array{0: string, 1: string, 2: array} */
@@ -226,7 +242,7 @@ class RegionContentEnricher
             'veya "en iyi/en çok tercih edilen" gibi yorumlar YAZMA. Yetkili satıcı/servis olduğumuzu ima ETME.',
             'Yalnız bu markanın ürünlerini toplu satarken satıcının işine yarayan somut bilgileri yaz.',
             '',
-            'İSTENEN YAPI (350-500 kelime):',
+            'İSTENEN YAPI (600-750 kelime, EN AZ 600):',
             '1. Giriş paragrafları (H2 başlığı olmadan): '.$brand->name.' ürünlerini toplu satmak isteyenler için kısa bir çerçeve.',
             '2. <h2>'.$brand->name.' ürünlerinde hangi durumları alıyoruz?</h2> — sıfır/kapalı kutu, teşhir, iade, ikinci el, arızalı',
             '3. <h2>Teklif için hangi bilgiler gerekir?</h2> — model, kapasite/özellik, adet, kutu/aksesuar, hesap/kilit durumu, fatura',

@@ -13,6 +13,15 @@
         <div class="container">
             <div class="row g-5">
                 <div class="col-lg-8">
+                    @if ($service->image)
+                        <img class="img-fluid rounded-4 mb-4 w-100" src="{{ $service->image_url }}"
+                             alt="{{ $service->image_alt ?: $service->title }}" width="900" height="420" style="aspect-ratio:15/7;object-fit:cover">
+                    @else
+                        <figure class="detail-art tone-{{ ($service->id % 6) + 1 }} mb-4" style="display:grid;place-items:center;padding:1.5rem;margin:0 0 1.5rem;border-radius:1.5rem;border:1px solid #e3e9f3;background:linear-gradient(150deg,#f4f8ff 0%,#e4eeff 100%)">
+                            <x-device-art style="height:200px;width:auto;max-width:100%" :slug="$service->slug" :title="$service->title.' illüstrasyonu'" />
+                        </figure>
+                    @endif
+
                     <div class="content-prose mb-5">{!! $service->description !!}</div>
 
                     @if (! empty($service->what_we_do))

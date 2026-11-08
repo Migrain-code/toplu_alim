@@ -25,6 +25,10 @@
                     @if ($post->image)
                         <img class="img-fluid rounded-3 shadow-soft mb-4 w-100" src="{{ $post->image_url }}"
                              alt="{{ $post->image_alt ?: $post->title }}" width="900" height="500" style="aspect-ratio:16/9;object-fit:cover">
+                    @else
+                        <figure class="detail-art tone-{{ ($post->id % 6) + 1 }} mb-4" style="display:grid;place-items:center;padding:1.5rem;margin:0 0 1.5rem;border-radius:1.5rem;border:1px solid #e3e9f3;background:linear-gradient(150deg,#f4f8ff 0%,#e4eeff 100%)">
+                            <x-device-art style="height:200px;width:auto;max-width:100%" :slug="$post->slug" :title="$post->title" />
+                        </figure>
                     @endif
 
                     @php

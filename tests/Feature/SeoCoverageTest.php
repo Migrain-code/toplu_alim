@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\Blog;
 use App\Models\Brand;
 use App\Models\District;
+use App\Models\InternalLinkRule;
 use App\Models\Province;
 use App\Models\Setting;
 use App\Services\Ai\RegionContentEnricher;
@@ -119,6 +121,43 @@ class SeoCoverageTest extends TestCase
         $this->assertStringContainsString('sahiplerinin tescilli markalarıdır', $fresh->content, 'hukuki not korunmalı');
 
         Http::assertSent(fn ($request) => str_contains(json_decode((string) $request->body(), true)['messages'][1]['content'] ?? '', 'MARKA HAKKINDA İDDİA YASAK'));
+    }
+
+    public function test_service_and_blog_pages_show_an_illustration_when_there_is_no_photo(): void
+    {
+        $this->seed();
+
+        $this->get('/toplu-telefon-alimi')->assertOk()->assertSee('class="detail-art', false)->assertSee('device-art--phone', false);
+
+        $blog = Blog::query()->published()->firstOrFail();
+        $this->get($blog->path())->assertOk()->assertSee('class="detail-art', false);
+    }
+
+    /**
+     * AI'ya istenen ifadeler iç link kurallarıyla BİREBİR aynı olmalı; yoksa metne giren
+     * ifade linke dönüşmez ("toplu bilgisayar alımı" ≠ "toplu bilgisayar ve laptop alımı").
+     */
+    public function test_province_prompt_asks_for_phrases_that_match_link_rules_and_600_words(): void
+    {
+        config(['seo.ai.api_key' => 'test-key', 'seo.ai.base_url' => 'https://openrouter.ai/api/v1']);
+        Http::fake(['openrouter.ai/*' => Http::response(['choices' => [['message' => ['content' => json_encode([
+            'body_html' => '<p>'.str_repeat('Ankara stoklarını değerlendiriyoruz. ', 80).'</p>', 'meta_title' => 'Ankara Toplu Elektronik Alımı', 'meta_description' => str_repeat('Ankara toplu alım. ', 7),
+        ], JSON_UNESCAPED_UNICODE)]]]])]);
+
+        app(RegionContentEnricher::class)->enrich(Province::where('slug', 'ankara')->firstOrFail());
+
+        app(TargetSynchroniser::class)->sync();
+        app(RuleBuilder::class)->build();
+        $anchors = InternalLinkRule::query()->active()->pluck('anchor_text')->all();
+
+        Http::assertSent(function ($request) use ($anchors) {
+            $prompt = json_decode((string) $request->body(), true)['messages'][1]['content'] ?? '';
+            $this->assertStringContainsString('EN AZ 600', $prompt);
+            $this->assertStringContainsString('"Ankara toplu bilgisayar ve laptop alımı"', $prompt);
+            $this->assertContains('Ankara toplu bilgisayar ve laptop alımı', $anchors);
+
+            return true;
+        });
     }
 
     public function test_enrich_command_accepts_brands(): void

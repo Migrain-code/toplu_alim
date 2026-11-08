@@ -54,7 +54,7 @@ InProcess::command('seo:score')->dailyAt('02:00')->withoutOverlapping();
  * Günlük sınır düşük tutulur: AI çağrısı ücretlidir ve içerik bir gecede değil,
  * zaman içinde iyileşmelidir.
  */
-InProcess::command('seo:enrich', ['--limit' => 3])->dailyAt('02:20')->withoutOverlapping();
+InProcess::command('seo:enrich', ['--limit' => 10])->dailyAt('02:20')->withoutOverlapping();
 // Metinsiz iller (noindex) her gece 10'ar doldurulur; 71 il ~bir haftada biter, sonra iş kalmaz.
 InProcess::command('seo:enrich', ['--thin' => true, '--limit' => 10])->dailyAt('02:40')->withoutOverlapping();
 
