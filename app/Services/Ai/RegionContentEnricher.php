@@ -99,6 +99,59 @@ class RegionContentEnricher
         return ['words_before' => $before, 'words_after' => $after, 'h2' => preg_match_all('/<h2[\s>]/i', $body)];
     }
 
+    /**
+     * Mevcut metni HİÇ DEĞİŞTİRMEDEN 600 kelimeye tamamlar: yalnız yeni bölümler eklenir.
+     * Skoru hedefin üstünde olduğu için zenginleştirmeye girmeyen kısa sayfalar için.
+     * Sondaki bloklar (ilgili sayfalar paragrafı, kelime bölümleri, marka hukuki notu)
+     * yeni bölümlerin ARKASINDA kalır.
+     *
+     * @return array{words_before: int, words_after: int, h2: int}
+     */
+    public function lengthen(Model $model): array
+    {
+        if ($model instanceof District || ! ($model instanceof Province || $model instanceof Service || $model instanceof Brand)) {
+            throw new AiException('Bu içerik tipi otomatik uzatılmaz: '.$model::class);
+        }
+
+        $original = (string) $this->bodyOf($model);
+        $before = $this->sanitizer->wordCount($original);
+
+        if ($before < 150) {
+            throw new AiException('Metin çok kısa ya da boş; önce zenginleştirme (metinsiz illeri doldur) çalışmalı.');
+        }
+
+        [$main, $keywordBlocks] = KeywordSections::extract($original);
+
+        $tail = [];
+        $main = preg_replace_callback('#<p class="related-links">.*?</p>|<p>\s*<small>.*?</small>\s*</p>#su', function ($m) use (&$tail) {
+            $tail[] = $m[0];
+
+            return '';
+        }, $main) ?? $main;
+
+        $main = trim($main);
+        $longer = $this->expandIfShort($main, $this->systemPrompt(), [
+            'content_type' => strtolower(class_basename($model)),
+            'content_id' => $model->getKey(),
+            'batch_key' => 'lengthen.'.strtolower(class_basename($model)),
+        ]);
+
+        if ($longer === $main) {
+            throw new AiException('Yeni bölüm üretilemedi, metin değişmedi.');
+        }
+
+        $body = implode("\n", array_filter([$longer, ...$keywordBlocks, ...$tail]));
+        $model->forceFill([$this->bodyField($model) => $body])->save();
+
+        $after = $this->sanitizer->wordCount($body);
+
+        AutomationLog::summary('seo.lengthen', [
+            'type' => class_basename($model), 'id' => $model->getKey(), 'words_before' => $before, 'words_after' => $after,
+        ], changed: true);
+
+        return ['words_before' => $before, 'words_after' => $after, 'h2' => preg_match_all('/<h2[\s>]/i', $body)];
+    }
+
     /** Skorun "iyi içerik" eşiği 600 kelime; altında kalan metne yeni bölüm eklenir. */
     public const EXPAND_BELOW = 600;
 

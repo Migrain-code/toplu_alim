@@ -13,6 +13,7 @@ use App\Services\Seo\ContentScorer;
 use App\Services\Seo\PageRenderer;
 use App\Support\AutomationLog;
 use App\Support\SeoConfig;
+use App\Support\SeoIssue;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -34,7 +35,8 @@ class EnrichContent extends Command
                             {--type=* : province|brand|service (boş bırakılırsa hepsi)}
                             {--limit=50 : En fazla kaç sayfa}
                             {--force : Hedef skorun üstündekileri de işle}
-                            {--thin : Yalnız henüz dizine açılmamış (ince metinli) il sayfaları}';
+                            {--thin : Yalnız henüz dizine açılmamış (ince metinli) il sayfaları}
+                            {--short : 600 kelimenin altındaki sayfaları, metne dokunmadan yeni bölümlerle uzat}';
 
     protected $description = 'Yayındaki sayfaların içeriğini AI ile genişletir ve yeniden skorlar';
 
@@ -53,7 +55,10 @@ class EnrichContent extends Command
         }
 
         $target = SeoConfig::int('score_target', 80, 1, 100);
-        $candidates = $this->candidates($registry, $target, (array) $this->option('type'), (bool) $this->option('force'), (bool) $this->option('thin'))
+        $short = (bool) $this->option('short');
+        $candidates = ($short
+            ? $this->shortCandidates((array) $this->option('type'))
+            : $this->candidates($registry, $target, (array) $this->option('type'), (bool) $this->option('force'), (bool) $this->option('thin')))
             ->take((int) $this->option('limit'));
 
         if ($candidates->isEmpty()) {
@@ -74,7 +79,7 @@ class EnrichContent extends Command
             $label = $this->label($model);
 
             try {
-                $result = $enricher->enrich($model);
+                $result = $short ? $enricher->lengthen($model) : $enricher->enrich($model);
             } catch (Throwable $e) {
                 $errors[] = $label.': '.$e->getMessage();
                 $this->line("  <fg=red>HATA</> {$label} — ".$e->getMessage());
@@ -104,6 +109,35 @@ class EnrichContent extends Command
         $this->info("{$done} sayfa zenginleştirildi.".(count($errors) ? ' '.count($errors).' hata.' : ''));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Son skorlamada "600 kelimeden az" uyarısı alan il/marka/hizmet sayfaları — skordan
+     * BAĞIMSIZ. En kısa olanlar önce. Metni hiç olmayan (150 kelime altı) sayfalar
+     * --thin işidir, burada atlanır.
+     *
+     * @return Collection<int, Model>
+     */
+    private function shortCandidates(array $types): Collection
+    {
+        $types = array_values(array_intersect($types ?: ['province', 'brand', 'service'], ['province', 'brand', 'service'])) ?: ['province', 'brand', 'service'];
+
+        return SeoAnalysis::query()
+            ->whereIn('content_type', $types)
+            ->get()
+            ->filter(fn (SeoAnalysis $a) => array_intersect([SeoIssue::CONTENT_THIN, SeoIssue::CONTENT_TOO_SHORT], (array) $a->issues) !== [])
+            ->map(fn (SeoAnalysis $a) => match ($a->content_type) {
+                'province' => Province::query()->where('is_active', true)->find($a->content_id),
+                'brand' => Brand::query()->where('is_active', true)->whereNull('service_id')->find($a->content_id),
+                'service' => Service::query()->where('is_active', true)->find($a->content_id),
+                default => null,
+            })
+            ->filter()
+            ->map(fn (Model $m) => [$m, str_word_count(strip_tags((string) ($m instanceof Service ? $m->description : $m->content)), 0, 'çğıöşüÇĞİÖŞÜ')])
+            ->filter(fn (array $row) => $row[1] >= 150)
+            ->sortBy(fn (array $row) => $row[1])
+            ->map(fn (array $row) => $row[0])
+            ->values();
     }
 
     /** @return Collection<int, Model> */

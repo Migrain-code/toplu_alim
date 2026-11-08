@@ -9,6 +9,7 @@ use App\Models\InternalLinkRule;
 use App\Models\Province;
 use App\Models\Setting;
 use App\Services\Ai\AiException;
+use App\Services\Ai\ContentSanitizer;
 use App\Services\Ai\RegionContentEnricher;
 use App\Services\InternalLink\RuleBuilder;
 use App\Services\Seo\TargetSynchroniser;
@@ -201,6 +202,33 @@ class SeoCoverageTest extends TestCase
         }
 
         $this->assertSame($long, Province::where('slug', 'ankara')->value('content'));
+    }
+
+    /**
+     * Skoru 90'ı geçtiği için zenginleştirmeye girmeyen ama 600 kelimenin altında kalan
+     * sayfalar (canlıda 112): metin korunur, yeni bölümler eklenir, sondaki bloklar sonda kalır.
+     */
+    public function test_short_pages_are_lengthened_without_touching_existing_text(): void
+    {
+        config(['seo.ai.api_key' => 'test-key', 'seo.ai.base_url' => 'https://openrouter.ai/api/v1']);
+        $original = '<p>'.str_repeat('Trabzon stoklarını adetli alıyoruz. ', 70).'</p><h2>Teklif süreci</h2><p>Arayın.</p>';
+        Province::where('slug', 'trabzon')->update(['content' => $original."\n".'<p class="related-links">İlgili: <a href="/trabzon/toplu-telefon-alimi">x</a></p>']);
+
+        app(TargetSynchroniser::class)->sync();
+        $this->artisan('seo:score')->assertSuccessful();
+
+        Http::fake(['openrouter.ai/*' => Http::response(['choices' => [['message' => ['content' => json_encode([
+            'body_html' => '<h2>Satış öncesi hazırlık</h2><p>'.str_repeat('Cihazları sıfırlayıp listeleyin. ', 90).'</p>',
+        ], JSON_UNESCAPED_UNICODE)]]]])]);
+
+        $this->artisan('seo:enrich', ['--short' => true, '--type' => ['province'], '--limit' => 20])->assertSuccessful();
+
+        $content = (string) Province::where('slug', 'trabzon')->value('content');
+        $this->assertStringStartsWith($original, $content, 'mevcut metin aynen korunmalı');
+        $this->assertStringContainsString('<h2>Satış öncesi hazırlık</h2>', $content);
+        $this->assertMatchesRegularExpression('#Satış öncesi hazırlık.*related-links#s', $content, 'ilgili sayfalar sonda kalmalı');
+        $this->assertGreaterThanOrEqual(600, app(ContentSanitizer::class)->wordCount($content));
+        $this->assertArrayHasKey('enrich-short', CommandCatalog::all());
     }
 
     public function test_enrich_command_accepts_brands(): void

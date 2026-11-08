@@ -57,6 +57,8 @@ InProcess::command('seo:score')->dailyAt('02:00')->withoutOverlapping();
 InProcess::command('seo:enrich', ['--limit' => 10])->dailyAt('02:20')->withoutOverlapping();
 // Metinsiz iller (noindex) her gece 10'ar doldurulur; 71 il ~bir haftada biter, sonra iş kalmaz.
 InProcess::command('seo:enrich', ['--thin' => true, '--limit' => 10])->dailyAt('02:40')->withoutOverlapping();
+// 600 kelimenin altındaki sayfalar metne dokunulmadan yeni bölümlerle uzatılır (her gece 10).
+InProcess::command('seo:enrich', ['--short' => true, '--limit' => 10])->dailyAt('03:10')->withoutOverlapping();
 
 InProcess::command('seo:check-index')->dailyAt('03:00')->withoutOverlapping();
 
