@@ -29,6 +29,9 @@ class IndexNow
         return preg_match('/^[a-f0-9]{8,128}$/i', $key) ? $key : null;
     }
 
+    /** Son gönderimde neden hiçbir adres kabul edilmediği (komut çıktısında gösterilir). */
+    public ?string $lastError = null;
+
     public function enabled(): bool
     {
         return $this->key() !== null;
@@ -47,7 +50,13 @@ class IndexNow
         $host = parse_url($root, PHP_URL_HOST);
 
         // Yalnız bu sitenin adresleri: IndexNow farklı host içeren listeyi tümden reddeder.
+        $this->lastError = null;
+        $total = count($urls);
         $urls = array_values(array_unique(array_filter($urls, fn ($u) => parse_url($u, PHP_URL_HOST) === $host)));
+
+        if ($urls === [] && $total > 0) {
+            $this->lastError = 'Adreslerin hiçbiri APP_URL alan adıyla ('.$host.') eşleşmiyor. APP_URL değerini ve yapılandırma önbelleğini kontrol edin.';
+        }
 
         if (! $key || $urls === [] || in_array($host, ['localhost', '127.0.0.1'], true)) {
             return 0;
@@ -68,9 +77,12 @@ class IndexNow
                 if (in_array($response->status(), [200, 202], true)) {
                     $sent += count($chunk);
                 } else {
+                    $this->lastError = 'IndexNow '.$response->status().' döndürdü ('.self::explain($response->status()).') '.mb_substr(trim($response->body()), 0, 200)
+                        .' · anahtar dosyası: '.$root.'/'.$key.'.txt';
                     AutomationLog::error('seo.indexnow', 'IndexNow reddetti', ['status' => $response->status(), 'body' => mb_substr($response->body(), 0, 300)]);
                 }
             } catch (Throwable $e) {
+                $this->lastError = 'Bağlantı hatası: '.$e->getMessage();
                 AutomationLog::error('seo.indexnow', $e->getMessage());
             }
         }
@@ -80,5 +92,16 @@ class IndexNow
         }
 
         return $sent;
+    }
+
+    private static function explain(int $status): string
+    {
+        return match ($status) {
+            400 => 'istek biçimi hatalı',
+            403 => 'anahtar doğrulanamadı: anahtar dosyası bulunamadı ya da içeriği anahtarla aynı değil',
+            422 => 'adresler bu alan adına ait değil ya da anahtar dosyasıyla eşleşmiyor',
+            429 => 'çok sık gönderim, daha sonra tekrar deneyin',
+            default => 'beklenmeyen yanıt',
+        };
     }
 }

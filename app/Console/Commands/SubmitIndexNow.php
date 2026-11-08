@@ -42,6 +42,10 @@ class SubmitIndexNow extends Command
         $sent = $indexNow->submit($urls);
         $this->info("{$sent} / ".count($urls).' adres bildirildi.');
 
+        if ($sent === 0 && $indexNow->lastError) {
+            $this->error($indexNow->lastError);
+        }
+
         return $sent > 0 ? self::SUCCESS : self::FAILURE;
     }
 }

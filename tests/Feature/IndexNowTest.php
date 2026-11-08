@@ -121,6 +121,17 @@ class IndexNowTest extends TestCase
             && ! in_array(url('/mardin'), $request['urlList'], true));
     }
 
+    /** Panelde yalnız "0 / 1108" görünüyordu; ret nedeni artık çıktıda yazar. */
+    public function test_command_prints_why_indexnow_rejected(): void
+    {
+        config(['seo.indexnow.key' => self::KEY]);
+        Http::fake([IndexNow::ENDPOINT => Http::response('', 403)]);
+
+        $this->artisan('seo:indexnow', ['--all' => true])
+            ->expectsOutputToContain('IndexNow 403')
+            ->assertFailed();
+    }
+
     public function test_saving_content_refreshes_the_cached_sitemap(): void
     {
         $this->get('/sitemap.xml')->assertDontSee(url('/mardin').'<', false);
