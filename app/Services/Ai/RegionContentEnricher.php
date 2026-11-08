@@ -51,6 +51,8 @@ class RegionContentEnricher
             throw new AiException('Üretilen içerik çok kısa, kaydedilmedi.');
         }
 
+        $body = $this->expandIfShort($body, $system, $meta);
+
         // Fırsat avının eklediği kelime bölümleri yeni metnin sonuna aynen geri konur;
         // yoksa her zenginleştirme o kelimeler için yapılan işi sessizce silerdi.
         [, $keywordBlocks] = KeywordSections::extract($this->bodyOf($model));
@@ -89,6 +91,43 @@ class RegionContentEnricher
         ], changed: true);
 
         return ['words_before' => $before, 'words_after' => $after, 'h2' => preg_match_all('/<h2[\s>]/i', $body)];
+    }
+
+    /** Skorun "iyi içerik" eşiği 600 kelime; altında kalan metin bir tur daha genişletilir. */
+    public const EXPAND_BELOW = 550;
+
+    /**
+     * Modeller istenen kelime sayısını çoğu zaman tutturmaz (canlıda 650-800 istendi,
+     * ~300 geldi). Kısa kalan metin İKİNCİ bir çağrıyla, içeriği korunarak uzatılır.
+     * Genişletme başarısız olur ya da kısalırsa ilk metin kullanılır — iş asla bozulmaz.
+     */
+    private function expandIfShort(string $body, string $system, array $meta): string
+    {
+        $words = $this->sanitizer->wordCount($body);
+
+        if ($words >= self::EXPAND_BELOW) {
+            return $body;
+        }
+
+        $user = implode("\n", [
+            'GÖREV: Aşağıdaki HTML metin '.$words.' kelime; EN AZ 650 kelimeye genişlet.',
+            '- Mevcut tüm paragrafları, H2 başlıklarını ve bilgileri KORU; hiçbir şeyi silme.',
+            '- Her bölüme satıcının işine yarayan somut ayrıntı ekle (hazırlık, teslim alma, ürün durumu, lot, veri silme).',
+            '- Gerekirse bir veya iki yeni <h2> bölümü ekle. Yeni bilgi UYDURMA, rakam/fiyat/süre VERME.',
+            '- Çıktı yalnız JSON: {"body_html":""}',
+            '',
+            'METİN:',
+            $body,
+        ]);
+
+        try {
+            $payload = $this->ai->json('seo.content', $system, $user, array_merge($meta, ['batch_key' => ($meta['batch_key'] ?? 'enrich').'.expand']));
+            $expanded = $this->sanitizer->bodyHtml($payload['body_html'] ?? null);
+        } catch (\Throwable) {
+            return $body;
+        }
+
+        return $this->sanitizer->wordCount($expanded) > $words ? $expanded : $body;
     }
 
     private function bodyField(Model $model): string

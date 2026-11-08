@@ -152,12 +152,32 @@ class SeoCoverageTest extends TestCase
 
         Http::assertSent(function ($request) use ($anchors) {
             $prompt = json_decode((string) $request->body(), true)['messages'][1]['content'] ?? '';
+            if (! str_contains($prompt, 'İSTENEN YAPI')) {
+                return false; // ikinci (genişletme) çağrısı
+            }
             $this->assertStringContainsString('EN AZ 600', $prompt);
             $this->assertStringContainsString('"Ankara toplu bilgisayar ve laptop alımı"', $prompt);
             $this->assertContains('Ankara toplu bilgisayar ve laptop alımı', $anchors);
 
             return true;
         });
+    }
+
+    /** AI 650-800 istense de ~300 kelime yazıyordu; kısa metin ikinci çağrıyla uzatılır. */
+    public function test_short_ai_output_is_expanded_with_a_second_call(): void
+    {
+        config(['seo.ai.api_key' => 'test-key', 'seo.ai.base_url' => 'https://openrouter.ai/api/v1']);
+        $reply = fn (int $n) => Http::response(['choices' => [['message' => ['content' => json_encode([
+            'body_html' => '<h2>Teklif süreci</h2><p>'.str_repeat('Manisa stoklarını adetli olarak alıyoruz. ', $n).'</p>',
+            'meta_title' => 'Manisa Toplu Elektronik Alımı', 'meta_description' => str_repeat('Manisa toplu alım. ', 7),
+        ], JSON_UNESCAPED_UNICODE)]]]]);
+
+        Http::fakeSequence('openrouter.ai/*')->pushResponse($reply(60))->pushResponse($reply(170));
+
+        $result = app(RegionContentEnricher::class)->enrich(Province::where('slug', 'manisa')->firstOrFail());
+
+        $this->assertGreaterThanOrEqual(600, $result['words_after']);
+        Http::assertSentCount(2);
     }
 
     public function test_enrich_command_accepts_brands(): void
