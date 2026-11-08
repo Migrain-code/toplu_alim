@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai;
 
+use App\Models\Brand;
 use App\Models\District;
 use App\Models\Province;
 use App\Models\Service;
@@ -35,6 +36,7 @@ class RegionContentEnricher
             $model instanceof District => throw new AiException('İlçe sayfaları otomatik zenginleştirilmez; metni panelden elle girin.'),
             $model instanceof Province => $this->provincePrompt($model),
             $model instanceof Service => $this->servicePrompt($model),
+            $model instanceof Brand => $this->brandPrompt($model),
             default => throw new AiException('Bu içerik tipi zenginleştirilemiyor: '.$model::class),
         };
 
@@ -54,6 +56,12 @@ class RegionContentEnricher
 
         if ($keywordBlocks) {
             $body .= "\n".implode("\n", $keywordBlocks);
+        }
+
+        // Marka metninin sonundaki hukuki not ("marka adları sahiplerine aittir…") korunur.
+        if ($model instanceof Brand && preg_match('/<p>\s*<small>.*?<\/small>\s*<\/p>\s*$/su', (string) $this->bodyOf($model), $notice)
+            && ! str_contains($body, '<small>')) {
+            $body .= "\n".trim($notice[0]);
         }
 
         $updates = [$this->bodyField($model) => $body];
@@ -195,6 +203,42 @@ class RegionContentEnricher
             $this->systemPrompt(),
             implode("\n", $lines),
             ['content_type' => 'service', 'content_id' => $service->getKey(), 'batch_key' => 'enrich.service'],
+        ];
+    }
+
+    /** @return array{0: string, 1: string, 2: array} */
+    private function brandPrompt(Brand $brand): array
+    {
+        $lines = [
+            'GÖREV: Aşağıdaki marka sayfasının metnini genişlet. Sayfa, bu markanın ürünlerini TOPLU SATMAK',
+            'isteyenlere (bayi, mağaza, şirket, ithalatçı, e-ticaret satıcısı) yöneliktir; biz alıcıyız.',
+            '',
+            'MARKA: '.$brand->name,
+            'KISA AÇIKLAMA: '.$brand->description,
+            '',
+            'MEVCUT METİN (bilgilerini KORU, üzerine ekleyerek genişlet):',
+            $this->existingText($brand->content, $brand->description),
+            '',
+            'ALDIĞIMIZ ÜRÜN GRUPLARI (sayfada ayrı liste olarak zaten var, metinde TEKRARLAMA; bağlam olarak kullan):',
+            '- '.implode("\n- ", (array) $brand->products),
+            '',
+            'MARKA HAKKINDA İDDİA YASAK: markanın kalitesi, pazar payı, satış rakamı, sıralaması, ödülleri',
+            'veya "en iyi/en çok tercih edilen" gibi yorumlar YAZMA. Yetkili satıcı/servis olduğumuzu ima ETME.',
+            'Yalnız bu markanın ürünlerini toplu satarken satıcının işine yarayan somut bilgileri yaz.',
+            '',
+            'İSTENEN YAPI (350-500 kelime):',
+            '1. Giriş paragrafları (H2 başlığı olmadan): '.$brand->name.' ürünlerini toplu satmak isteyenler için kısa bir çerçeve.',
+            '2. <h2>'.$brand->name.' ürünlerinde hangi durumları alıyoruz?</h2> — sıfır/kapalı kutu, teşhir, iade, ikinci el, arızalı',
+            '3. <h2>Teklif için hangi bilgiler gerekir?</h2> — model, kapasite/özellik, adet, kutu/aksesuar, hesap/kilit durumu, fatura',
+            '4. <h2>Satış öncesi hazırlık</h2> — veri silme, hesaptan çıkarma, lot hazırlama (bu markanın ürünlerine uygun genel adımlar)',
+            '',
+            'meta_title: en fazla 60 karakter, "'.$brand->name.'" ve "toplu" geçsin. meta_description: 120-150 karakter.',
+        ];
+
+        return [
+            $this->systemPrompt(),
+            implode("\n", $lines),
+            ['content_type' => 'brand', 'content_id' => $brand->getKey(), 'batch_key' => 'enrich.brand'],
         ];
     }
 }

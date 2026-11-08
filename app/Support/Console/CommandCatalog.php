@@ -117,6 +117,9 @@ final class CommandCatalog
             'enrich-thin' => self::entry('seo:enrich', ['--thin' => true, '--limit' => 10], 'Metinsiz illeri doldur (yapay zeka)',
                 'Henüz kendine özgü metni olmayan (noindex) en fazla 10 ile yapay zekayla metin yazar; öne çıkan iller önce. Metin alan il dizine açılır ve IndexNow ile bildirilir. Hepsi dolana kadar tekrar basın. Ücretlidir.',
                 'seo', mode: 'background', danger: true),
+            'enrich-brands' => self::entry('seo:enrich', ['--type' => ['brand'], '--limit' => 10], 'Marka metinlerini genişlet (yapay zeka)',
+                'Hedef skorun altındaki en fazla 10 marka sayfasının metnini yapay zekayla genişletir (marka hakkında iddia yazmaz, hukuki not korunur). Ücretlidir.',
+                'seo', mode: 'background', danger: true),
             'indexnow' => self::entry('seo:indexnow', ['--all' => true], 'IndexNow ile tüm sayfaları bildir',
                 'Site haritasındaki dizine açık tüm adresleri Bing, Yandex ve diğer IndexNow arama motorlarına tek seferde bildirir. Kurulumdan sonra bir kez yeterli; yeni yazı ve metin alan iller sonrasında otomatik bildirilir. .env dosyasında INDEXNOW_KEY gerekir.',
                 'seo', mode: 'background'),
@@ -198,7 +201,10 @@ final class CommandCatalog
             } elseif ($value === true) {
                 $parts[] = $name;
             } else {
-                $parts[] = $name.'='.$value;
+                // Dizi değerli seçenek (--type=* gibi) tekrarlı yazılır: --type=brand --type=province
+                foreach ((array) $value as $item) {
+                    $parts[] = $name.'='.$item;
+                }
             }
         }
 

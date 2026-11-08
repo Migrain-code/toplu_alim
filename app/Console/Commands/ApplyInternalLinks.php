@@ -26,7 +26,7 @@ class ApplyInternalLinks extends Command
 {
     protected $signature = 'links:apply
                             {--force : Otomatik uygulama kapalı olsa da uygula}
-                            {--type=* : blog|service|brand|district|province (boş bırakılırsa hepsi)}';
+                            {--type=* : blog|service|brand|province|district (boş bırakılırsa ilçeler HARİÇ hepsi)}';
 
     protected $description = 'İç link kurallarını yayındaki içeriklerin gövdesine işler';
 
@@ -56,7 +56,8 @@ class ApplyInternalLinks extends Command
         }
 
         $batch = SeoConfig::int('internal_links_batch_size', (int) config('seo.internal_links.batch_size', 25), 1, 500);
-        $types = (array) $this->option('type') ?: ['blog', 'service', 'brand', 'district', 'province'];
+        // İlçeler bot SEO kapsamı dışında: yalnız --type=district açıkça verilirse işlenir.
+        $types = (array) $this->option('type') ?: ['blog', 'service', 'brand', 'province'];
 
         $scanned = 0;
         $changed = 0;
@@ -109,13 +110,16 @@ class ApplyInternalLinks extends Command
         }
 
         if (in_array('service', $types, true)) {
-            $out['service'] = Service::query()->where('is_active', true)->limit($batch)->get()
+            // Hizmet, marka ve il sayısı küçük ve sabit (12 / 20 / 81): hepsi her turda taranır.
+            // Eskiden tür başına ilk 25 kayıt alınıyordu; sırasız il listesinde hep aynı 25 il
+            // (plaka sırası) işleniyor, İstanbul/İzmir gibi iller hiç link almıyordu.
+            $out['service'] = Service::query()->where('is_active', true)->get()
                 ->map(fn (Service $s) => [$s, 'description', '/'.$s->slug])->all();
         }
 
         if (in_array('brand', $types, true)) {
             // Kendi hizmet sayfasına bağlı markanın gövdesi yayınlanmaz; atlanır.
-            $out['brand'] = Brand::query()->where('is_active', true)->whereNull('service_id')->limit($batch)->get()
+            $out['brand'] = Brand::query()->where('is_active', true)->whereNull('service_id')->get()
                 ->map(fn (Brand $b) => [$b, 'content', $b->path()])->all();
         }
 
@@ -126,7 +130,7 @@ class ApplyInternalLinks extends Command
         }
 
         if (in_array('province', $types, true)) {
-            $out['province'] = Province::query()->where('is_active', true)->limit($batch)->get()
+            $out['province'] = Province::query()->where('is_active', true)->orderBy('sort_order')->get()
                 ->map(fn (Province $p) => [$p, 'content', '/'.$p->slug])->all();
         }
 

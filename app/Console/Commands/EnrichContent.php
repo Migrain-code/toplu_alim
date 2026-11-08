@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Brand;
 use App\Models\Province;
 use App\Models\SeoAnalysis;
 use App\Models\Service;
@@ -30,7 +31,7 @@ use Throwable;
 class EnrichContent extends Command
 {
     protected $signature = 'seo:enrich
-                            {--type=* : province|service (boş bırakılırsa ikisi de)}
+                            {--type=* : province|brand|service (boş bırakılırsa hepsi)}
                             {--limit=50 : En fazla kaç sayfa}
                             {--force : Hedef skorun üstündekileri de işle}
                             {--thin : Yalnız henüz dizine açılmamış (ince metinli) il sayfaları}';
@@ -109,7 +110,7 @@ class EnrichContent extends Command
     private function candidates(ContentRegistry $registry, int $target, array $types, bool $force, bool $thin = false): Collection
     {
         // İlçeler kapsam dışı: --type=district verilse de yok sayılır.
-        $types = array_values(array_intersect($types ?: ['province', 'service'], ['province', 'service'])) ?: ['province', 'service'];
+        $types = array_values(array_intersect($types ?: ['province', 'brand', 'service'], ['province', 'brand', 'service'])) ?: ['province', 'brand', 'service'];
 
         if ($thin) {
             // İnce metin = henüz indekslenmeyen il sayfası; skordan bağımsız olarak işlenir.
@@ -118,7 +119,7 @@ class EnrichContent extends Command
         }
 
         $featured = array_flip((array) config('site.featured_provinces', []));
-        $typeOrder = ['province' => 0, 'service' => 1];
+        $typeOrder = ['province' => 0, 'brand' => 1, 'service' => 2];
 
         return $registry->reachable()
             ->filter(fn ($c) => in_array($c->contentType, $types, true))
@@ -136,13 +137,18 @@ class EnrichContent extends Command
             })
             ->map(fn ($c) => match ($c->contentType) {
                 'province' => Province::find($c->contentId),
+                'brand' => Brand::query()->whereNull('service_id')->find($c->contentId),
                 'service' => Service::find($c->contentId),
                 default => null,
             })
             ->filter()
             ->when($thin, fn (Collection $c) => $c->filter(fn ($m) => method_exists($m, 'isIndexable') && ! $m->isIndexable()))
             ->sortBy(function ($m) use ($featured, $typeOrder) {
-                $type = $m instanceof Province ? 'province' : 'service';
+                $type = match (true) {
+                    $m instanceof Province => 'province',
+                    $m instanceof Brand => 'brand',
+                    default => 'service',
+                };
                 $provinceSlug = $m->slug ?? null;
                 $rank = $featured[$provinceSlug] ?? 999;
 
@@ -155,6 +161,7 @@ class EnrichContent extends Command
     {
         return match (true) {
             $model instanceof Province => $model->name.' (il)',
+            $model instanceof Brand => $model->name.' (marka)',
             $model instanceof Service => $model->title,
             default => class_basename($model),
         };
