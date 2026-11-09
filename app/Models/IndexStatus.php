@@ -29,6 +29,11 @@ class IndexStatus extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::saving(fn (IndexStatus $status) => $status->url_hash = sha1((string) $status->url));
+    }
+
     public function analysis(): BelongsTo
     {
         return $this->belongsTo(SeoAnalysis::class, 'url', 'url');
@@ -51,15 +56,16 @@ class IndexStatus extends Model
             ->unique()
             ->values();
 
-        $existing = static::query()->pluck('url')->flip();
+        $existing = static::query()->pluck('url_hash')->flip();
         $now = now();
 
-        $rows = $urls->reject(fn ($url) => $existing->has($url))
+        $rows = $urls->reject(fn ($url) => $existing->has(sha1($url)))
             ->map(function (string $url) use ($analyses, $now) {
                 $a = $analyses->get($url);
 
                 return [
                     'url' => $url,
+                    'url_hash' => sha1($url),
                     'google_index_status' => $a?->google_index_status,
                     'google_index_detail' => $a?->google_index_detail,
                     'index_checked_at' => $a?->index_checked_at,
@@ -75,7 +81,7 @@ class IndexStatus extends Model
             static::query()->insert($chunk->values()->all());
         }
 
-        static::query()->whereNotIn('url', $urls->all())->delete();
+        static::query()->whereNotIn('url_hash', $urls->map(fn ($url) => sha1($url))->all())->delete();
 
         return $urls->count();
     }

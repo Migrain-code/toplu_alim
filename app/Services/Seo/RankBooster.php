@@ -504,7 +504,7 @@ class RankBooster
         $this->indexing->submit(url($url));
 
         // Günlük kota index_statuses üzerinden sayılır.
-        $status = IndexStatus::query()->firstOrNew(['url' => url($url)]);
+        $status = IndexStatus::query()->firstOrNew(['url_hash' => sha1(url($url))], ['url' => url($url)]);
         $status->forceFill([
             'index_submitted_at' => now(),
             'index_submit_count' => (int) $status->index_submit_count + 1,
