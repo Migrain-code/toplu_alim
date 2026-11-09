@@ -125,11 +125,32 @@ class IndexNowTest extends TestCase
     public function test_command_prints_why_indexnow_rejected(): void
     {
         config(['seo.indexnow.key' => self::KEY]);
-        Http::fake([IndexNow::ENDPOINT => Http::response('', 403)]);
+        Http::fake([
+            IndexNow::ENDPOINT => Http::response('', 403),
+            IndexNow::FALLBACK_ENDPOINT => Http::response('', 403),
+        ]);
 
         $this->artisan('seo:indexnow', ['--all' => true])
             ->expectsOutputToContain('IndexNow 403')
             ->assertFailed();
+    }
+
+    /** Canlıda Bing 403 "UserForbiddedToAccessSite" verirken Yandex aynı anahtarı 202 ile kabul etti. */
+    public function test_falls_back_to_yandex_when_the_main_endpoint_rejects(): void
+    {
+        config(['seo.indexnow.key' => self::KEY]);
+        Http::fake([
+            IndexNow::ENDPOINT => Http::response('{"errorCode":"UserForbiddedToAccessSite"}', 403),
+            IndexNow::FALLBACK_ENDPOINT => Http::response('', 202),
+        ]);
+
+        $indexNow = app(IndexNow::class);
+        $sent = $indexNow->submit(['https://toptanelektronikalimi.com/istanbul']);
+
+        $this->assertSame(1, $sent);
+        $this->assertNull($indexNow->lastError);
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($request) => $request->url() === IndexNow::FALLBACK_ENDPOINT);
     }
 
     public function test_saving_content_refreshes_the_cached_sitemap(): void
