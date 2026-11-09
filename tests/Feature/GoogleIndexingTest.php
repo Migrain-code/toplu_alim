@@ -270,4 +270,27 @@ class GoogleIndexingTest extends TestCase
         $this->assertSame(3, $result['checked']);
         $this->assertSame(0, $result['quota_left']);
     }
+
+    /** Canlıda kuyruk işi 900 sn'de "timed out" ile öldü; tur süre bütçesiyle durmalı ve kalanı bırakmalı. */
+    public function test_index_check_stops_when_its_time_budget_runs_out_and_skips_fresh_rows(): void
+    {
+        Http::fake(['searchconsole.googleapis.com/*' => Http::response([
+            'inspectionResult' => ['indexStatusResult' => ['verdict' => 'PASS']],
+        ], 200)]);
+
+        foreach (range(1, 5) as $i) {
+            $this->analiz('/sayfa-'.$i, null);
+        }
+
+        // Bütçe baştan bitmiş: hiçbir şey sorulmaz, hepsi sırada kalır.
+        $first = app(SearchConsoleService::class)->syncIndexStatus(seconds: -1);
+        $this->assertSame(0, $first['checked']);
+
+        $all = app(SearchConsoleService::class)->syncIndexStatus();
+        $this->assertSame(0, $all['pending']);
+
+        // Az önce bakılanlar 20 saat dolmadan tekrar sorulmaz.
+        $again = app(SearchConsoleService::class)->syncIndexStatus();
+        $this->assertSame(0, $again['checked']);
+    }
 }

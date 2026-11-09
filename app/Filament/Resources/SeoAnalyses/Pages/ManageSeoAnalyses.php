@@ -25,7 +25,7 @@ class ManageSeoAnalyses extends ManageRecords
         $gsc = app(SearchConsoleService::class);
 
         return 'Site haritasındaki tüm adreslerin (il × hizmet sayfaları dahil) Google dizininde olup olmadığını gösterir. '
-            .'Gece 03:00\'te görev hepsini, en eski kontrol edilenden başlayarak sorar (günlük kota 2000; bugün kalan: '
+            .'Gece 01:00–07:00 arası saatlik görev hepsini, hiç bakılmamış olandan başlayarak sorar (günlük kota 2000; bugün kalan: '
             .$gsc->inspectionsLeftToday().'). Dizinde olmayanlara her gece 200 adrese kadar bildirim gider.';
     }
 
@@ -39,7 +39,7 @@ class ManageSeoAnalyses extends ManageRecords
                 ->requiresConfirmation()
                 ->modalHeading('Dizin durumunu kontrol et')
                 ->modalDescription(fn () => 'Search Console\'a site haritasındaki tüm adresleri sorar (en eski kontrol edilen önce). '
-                    .'Bugün kalan sorgu hakkı: '.app(SearchConsoleService::class)->inspectionsLeftToday().'. 1000 adres yaklaşık 10 dakika sürer; '
+                    .'Bugün kalan sorgu hakkı: '.app(SearchConsoleService::class)->inspectionsLeftToday().'. Bir tur en fazla ~13 dakika sürer; sığmayan adresler gece 01:00–07:00 arası saatlik turlarda sorulur. '
                     .'iş kuyruğa alınır ve kuyruk işçisi çalıştırır.')
                 ->modalSubmitActionLabel('Evet, çalıştır')
                 ->action(function (CommandRunner $runner) {

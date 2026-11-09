@@ -60,7 +60,9 @@ InProcess::command('seo:enrich', ['--thin' => true, '--limit' => 10])->dailyAt('
 // 600 kelimenin altındaki sayfalar metne dokunulmadan yeni bölümlerle uzatılır (her gece 10).
 InProcess::command('seo:enrich', ['--short' => true, '--limit' => 10])->dailyAt('03:10')->withoutOverlapping();
 
-InProcess::command('seo:check-index')->dailyAt('03:00')->withoutOverlapping();
+// Her tur ~13 dk ile sınırlı (kuyruk zaman aşımı); 1108 adres birkaç turda biter. Son 20 saatte
+// bakılan adres tekrar sorulmaz, yani işi bitmiş turlar kota harcamadan anında çıkar.
+InProcess::command('seo:check-index')->hourly()->between('01:00', '07:00')->withoutOverlapping(20);
 
 /*
  * Dizine girmemiş sayfalar Google'a bildirilir. Kontrolden SONRA koşar ki hangi
