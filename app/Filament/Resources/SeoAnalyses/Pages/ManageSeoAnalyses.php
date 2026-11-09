@@ -22,8 +22,11 @@ class ManageSeoAnalyses extends ManageRecords
             return 'Search Console bağlantısı kurulmadığı için dizin durumu boş kalır. Bağlantıyı SEO Merkezi → Ayarlar sekmesinden kurabilirsiniz.';
         }
 
-        return 'Sayfaların Google dizininde olup olmadığını gösterir. Gece çalışan görev her turda en eski '
-            .'kontrol edilen 30 sayfayı sorar; "Son kontrol" sütunu satırın ne kadar taze olduğunu söyler.';
+        $gsc = app(SearchConsoleService::class);
+
+        return 'Site haritasındaki tüm adreslerin (il × hizmet sayfaları dahil) Google dizininde olup olmadığını gösterir. '
+            .'Gece 03:00\'te görev hepsini, en eski kontrol edilenden başlayarak sorar (günlük kota 2000; bugün kalan: '
+            .$gsc->inspectionsLeftToday().'). Dizinde olmayanlara her gece 200 adrese kadar bildirim gider.';
     }
 
     protected function getHeaderActions(): array
@@ -35,7 +38,8 @@ class ManageSeoAnalyses extends ManageRecords
                 ->visible(fn () => auth()->user()?->isSuperAdmin() && app(SearchConsoleService::class)->isConfigured())
                 ->requiresConfirmation()
                 ->modalHeading('Dizin durumunu kontrol et')
-                ->modalDescription('Search Console\'a sorar. Her çalıştırmada en eski kontrol edilen 30 sayfaya bakılır; '
+                ->modalDescription(fn () => 'Search Console\'a site haritasındaki tüm adresleri sorar (en eski kontrol edilen önce). '
+                    .'Bugün kalan sorgu hakkı: '.app(SearchConsoleService::class)->inspectionsLeftToday().'. 1000 adres yaklaşık 10 dakika sürer; '
                     .'iş kuyruğa alınır ve kuyruk işçisi çalıştırır.')
                 ->modalSubmitActionLabel('Evet, çalıştır')
                 ->action(function (CommandRunner $runner) {

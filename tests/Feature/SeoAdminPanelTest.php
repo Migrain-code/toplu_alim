@@ -11,6 +11,7 @@ use App\Models\AiCrawlerVisit;
 use App\Models\AiGeneration;
 use App\Models\Blog;
 use App\Models\BlogCategory;
+use App\Models\IndexStatus;
 use App\Models\InternalLinkRule;
 use App\Models\NotFoundLog;
 use App\Models\Redirect;
@@ -87,15 +88,13 @@ class SeoAdminPanelTest extends TestCase
     /** @return array<string, SeoAnalysis> */
     private function seedIndexStatuses(): array
     {
-        // Her içeriğin tek analiz kaydı vardır (content_type + content_id benzersiz).
-        $id = 0;
-        $make = function (string $url, ?string $status, ?string $checked) use (&$id) {
-            return SeoAnalysis::create([
-                'content_type' => 'page', 'content_id' => ++$id, 'url' => $url, 'score' => 70,
+        // Liste adres başına tutulur (index_statuses); il × hizmet sayfaları da dahil.
+        $make = function (string $url, ?string $status, ?string $checked) {
+            return IndexStatus::create([
+                'url' => $url,
                 'google_index_status' => $status,
                 'google_index_detail' => $status === 'FAIL' ? 'URL is unknown to Google' : null,
                 'index_checked_at' => $checked,
-                'analyzed_at' => now(),
             ]);
         };
 

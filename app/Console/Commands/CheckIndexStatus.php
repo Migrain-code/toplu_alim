@@ -2,14 +2,13 @@
 
 namespace App\Console\Commands;
 
-use App\Models\SeoAnalysis;
 use App\Services\Google\SearchConsoleService;
 use App\Support\AutomationLog;
 use Illuminate\Console\Command;
 
 class CheckIndexStatus extends Command
 {
-    protected $signature = 'seo:check-index {--limit=0 : Kontrol edilecek adres sayısı (0 = sistemdeki tüm adresler)}';
+    protected $signature = 'seo:check-index {--limit=0 : Kontrol edilecek adres sayısı (0 = günlük kota elverdiğince site haritasındaki tüm adresler)}';
 
     protected $description = 'Sayfaların Google indeks durumunu kontrol eder (URL Inspection API)';
 
@@ -21,33 +20,16 @@ class CheckIndexStatus extends Command
             return self::SUCCESS;
         }
 
-        $result = $gsc->syncIndexStatus($this->limit());
+        $limit = (int) $this->option('limit');
+        $result = $limit > 0 ? $gsc->syncIndexStatus($limit) : $gsc->syncIndexStatus();
 
         AutomationLog::summary('gsc.index', $result,
             reasons: $result['checked'] === 0 ? ['no_candidates'] : [],
             errors: $result['errors'] > 0 ? ['inspection_failed'] : [],
             changed: $result['checked'] > 0);
 
-        $this->info("{$result['checked']} sayfa kontrol edildi, {$result['indexed']} tanesi indeksli.");
+        $this->info("{$result['checked']} / {$result['tracked']} adres kontrol edildi, {$result['indexed']} tanesi indeksli. Bugün kalan sorgu hakkı: {$result['quota_left']}.");
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Varsayılan: sistemdeki TÜM adresler.
-     *
-     * URL Inspection API'nin günlük kotası mülk başına 2000 sorgu; site bunun
-     * çok altında olduğu için tek turda tamamı kontrol edilir. Kotayı aşmamak
-     * için üst sınır yine de 2000'de tutulur.
-     */
-    private function limit(): int
-    {
-        $limit = (int) $this->option('limit');
-
-        if ($limit > 0) {
-            return $limit;
-        }
-
-        return min(2000, max(1, SeoAnalysis::query()->whereNotNull('url')->count()));
     }
 }

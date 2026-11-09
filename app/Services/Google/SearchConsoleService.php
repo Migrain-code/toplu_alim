@@ -2,7 +2,7 @@
 
 namespace App\Services\Google;
 
-use App\Models\SeoAnalysis;
+use App\Models\IndexStatus;
 use App\Models\SeoKeyword;
 use App\Models\SeoRankHistory;
 use App\Models\SeoSearchQuery;
@@ -11,6 +11,7 @@ use App\Support\PathNormalizer;
 use App\Support\TurkishText;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -214,11 +215,26 @@ class SearchConsoleService
         ];
     }
 
-    /** @return array{checked: int, indexed: int, errors: int} */
-    public function syncIndexStatus(int $limit = 30): array
+    /** URL Inspection API: mülk başına günde 2000, dakikada 600 sorgu. */
+    public const INSPECT_DAILY_QUOTA = 2000;
+
+    /** Bugün kalan sorgu hakkı (elle basılan düğme + gece görevi aynı sayaçtan düşer). */
+    public function inspectionsLeftToday(): int
     {
-        $analyses = SeoAnalysis::query()
-            ->whereNotNull('url')
+        return max(0, self::INSPECT_DAILY_QUOTA - (int) Cache::get($this->inspectCounterKey(), 0));
+    }
+
+    /**
+     * Site haritasındaki tüm adresleri (en eski kontrol edilen önce) Google'a sorar.
+     *
+     * @return array{checked: int, indexed: int, errors: int, tracked: int, quota_left: int}
+     */
+    public function syncIndexStatus(int $limit = self::INSPECT_DAILY_QUOTA): array
+    {
+        $tracked = IndexStatus::syncTracked();
+        $limit = min($limit, $this->inspectionsLeftToday());
+
+        $rows = $limit < 1 ? collect() : IndexStatus::query()
             ->orderByRaw('index_checked_at IS NULL DESC')
             ->orderBy('index_checked_at')
             ->limit($limit)
@@ -226,25 +242,42 @@ class SearchConsoleService
 
         $checked = $indexed = $errors = 0;
 
-        foreach ($analyses as $analysis) {
+        foreach ($rows as $row) {
             try {
-                $result = $this->inspect($analysis->url);
+                $this->countInspection();
+                $result = $this->inspect($row->url);
 
-                $analysis->forceFill([
+                $row->mirror([
                     'google_index_status' => $result['verdict'],
                     'google_index_detail' => $result['detail'],
                     'index_checked_at' => now(),
-                ])->saveQuietly();
+                ]);
 
                 $checked++;
                 $result['verdict'] === 'PASS' && $indexed++;
             } catch (\Throwable $e) {
                 $errors++;
-                AutomationLog::error('gsc.inspect', $e->getMessage(), ['url' => $analysis->url]);
-                break; // Yetki hatasıysa kalan çağrılar da düşer; kotayı harcama.
+                AutomationLog::error('gsc.inspect', $e->getMessage(), ['url' => $row->url]);
+                break; // Yetki ya da kota hatasıysa kalan çağrılar da düşer; kotayı harcama.
             }
+
+            // Dakikada 600 sınırının altında kal (~540/dk).
+            app()->runningUnitTests() || usleep(110_000);
         }
 
-        return ['checked' => $checked, 'indexed' => $indexed, 'errors' => $errors];
+        return ['checked' => $checked, 'indexed' => $indexed, 'errors' => $errors, 'tracked' => $tracked, 'quota_left' => $this->inspectionsLeftToday()];
+    }
+
+    private function countInspection(): void
+    {
+        $key = $this->inspectCounterKey();
+        Cache::add($key, 0, now()->addDays(2));
+        Cache::increment($key);
+    }
+
+    /** Google kotayı Pasifik saatine göre sıfırlar. */
+    private function inspectCounterKey(): string
+    {
+        return 'gsc.inspect.used.'.now('America/Los_Angeles')->toDateString();
     }
 }

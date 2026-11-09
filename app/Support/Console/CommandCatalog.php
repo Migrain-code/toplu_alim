@@ -136,7 +136,7 @@ final class CommandCatalog
                 'Hedef kelimelerin Google sıralamalarını Search Console verisinden günceller.',
                 'seo', mode: 'background'),
             'check-index' => self::entry('seo:check-index', [], 'Dizin durumunu kontrol et',
-                'Sayfaların Google dizininde olup olmadığını Search Console\'a sorar.',
+                'Site haritasındaki tüm adreslerin Google dizininde olup olmadığını Search Console\'a sorar (günlük kota 2000).',
                 'seo', mode: 'background'),
             'submit-index' => self::entry('seo:submit-index', [], 'Dizine ekleme bildirimi gönder',
                 'Google dizininde olmayan sayfaları Indexing API ile Google\'a bildirir. Günlük kota 200 adres.',

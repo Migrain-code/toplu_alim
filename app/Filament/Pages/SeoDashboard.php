@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Filament\Clusters\SeoMerkezi;
 use App\Models\AiGeneration;
 use App\Models\Blog;
+use App\Models\IndexStatus;
 use App\Models\NotFoundLog;
 use App\Models\SeoAnalysis;
 use App\Services\Seo\ContentRegistry;
@@ -15,6 +16,7 @@ use BackedEnum;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class SeoDashboard extends Page
 {
@@ -58,7 +60,12 @@ class SeoDashboard extends Page
             'issues' => $analyses->flatMap(fn (SeoAnalysis $a) => $a->issues ?? [])
                 ->countBy()->sortDesc(),
             'worst' => $analyses->sortBy('score')->take(10),
-            'indexStatus' => $analyses->whereNotNull('google_index_status')->countBy('google_index_status'),
+            // Tablo "Veritabanını güncelle" çalışana kadar yoktur; panel o arada çökmesin.
+            'indexStatus' => Schema::hasTable('index_statuses')
+                ? IndexStatus::query()->whereNotNull('google_index_status')
+                    ->selectRaw('google_index_status, count(*) as total')->groupBy('google_index_status')
+                    ->pluck('total', 'google_index_status')
+                : collect(),
             'keywordStats' => app(KeywordPool::class)->stats(),
             'duplicatePairs' => Blog::query()->count() > 1 ? app(DuplicateScanner::class)->pairs()->count() : 0,
             'notFound' => NotFoundLog::query()->unresolved()->count(),

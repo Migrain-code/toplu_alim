@@ -3,6 +3,7 @@
 namespace App\Services\Seo;
 
 use App\Models\District;
+use App\Models\IndexStatus;
 use App\Models\InternalLinkRule;
 use App\Models\Province;
 use App\Models\SeoAnalysis;
@@ -502,7 +503,15 @@ class RankBooster
     {
         $this->indexing->submit(url($url));
 
-        // Günlük kota seo_analyses üzerinden sayılır; gece görevi de aynı sayfayı tekrar bildirmesin.
+        // Günlük kota index_statuses üzerinden sayılır.
+        $status = IndexStatus::query()->firstOrNew(['url' => url($url)]);
+        $status->forceFill([
+            'index_submitted_at' => now(),
+            'index_submit_count' => (int) $status->index_submit_count + 1,
+            'index_submit_error' => null,
+        ])->save();
+
+        // Skor kaydı da güncellensin; gece görevi aynı sayfayı tekrar bildirmesin.
         if ($target = $keyword->target) {
             SeoAnalysis::query()
                 ->where('content_type', $target->content_type)
