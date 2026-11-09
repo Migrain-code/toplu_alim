@@ -565,4 +565,14 @@ class SystemCommandsTest extends TestCase
             'metinsiz iller için gece görevi olmalı',
         );
     }
+
+    /** Canlıda dizin kontrolü "attempted too many times" ile düştü: retry_after 90 sn'ydi. */
+    public function test_queue_does_not_retake_a_long_panel_command_while_it_runs(): void
+    {
+        $timeout = (new RunConsoleCommand(1))->timeout;
+
+        foreach (['database', 'redis'] as $connection) {
+            $this->assertGreaterThan($timeout, config("queue.connections.{$connection}.retry_after"), $connection);
+        }
+    }
 }
