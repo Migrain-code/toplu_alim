@@ -190,6 +190,7 @@ class OpportunityHunt extends Page implements HasTable
                     'require_region' => SeoConfig::bool('opportunity_require_region', true),
                     'require_business' => SeoConfig::bool('opportunity_require_business', true),
                     'max_new' => SeoConfig::int('opportunity_max_new_per_run', 30, 1, 500),
+                    'blog_fallback' => SeoConfig::bool('opportunity_blog_fallback', true),
                 ])
                 ->schema([
                     TextInput::make('min_impressions')->label('En az gösterim')->numeric()->minValue(1)->maxValue(1000)->required()
@@ -201,6 +202,9 @@ class OpportunityHunt extends Page implements HasTable
                     Toggle::make('require_business')->label('Sorguda iş terimi geçsin (alım, toptan, stok…)')
                         ->helperText('Kapalıyken marka adı vb. tüm sorgular alınır.'),
                     TextInput::make('max_new')->label('Tur başına en fazla yeni kelime')->numeric()->minValue(1)->maxValue(500)->required(),
+                    Toggle::make('blog_fallback')->label('Sayfası olmayan kelimeye blog yazısı yaz')
+                        ->helperText('Kelime yazılabilir bir sayfaya bağlı değilse (marka, il × hizmet ya da hiç): önce uygun hizmet sayfası aranır, '
+                            .'yoksa kelimeye özel yazı yayınlanır ve içine il × hizmet sayfalarının linkleri eklenir.'),
                 ])
                 ->action(function (array $data) {
                     SeoConfig::set('opportunity_min_impressions', (int) $data['min_impressions']);
@@ -208,6 +212,7 @@ class OpportunityHunt extends Page implements HasTable
                     SeoConfig::set('opportunity_require_region', (bool) $data['require_region']);
                     SeoConfig::set('opportunity_require_business', (bool) $data['require_business']);
                     SeoConfig::set('opportunity_max_new_per_run', (int) $data['max_new']);
+                    SeoConfig::set('opportunity_blog_fallback', (bool) ($data['blog_fallback'] ?? true));
 
                     Notification::make()->title('Filtreler kaydedildi')
                         ->body('Yeni kelimeler için "Tüm Sıraları Kontrol Et" düğmesine basın.')->success()->send();

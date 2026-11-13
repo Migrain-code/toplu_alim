@@ -47,7 +47,7 @@ use Throwable;
  */
 class RankBooster
 {
-    public const STEPS = ['meta', 'content', 'faq', 'link_rule', 'index'];
+    public const STEPS = ['blog', 'meta', 'content', 'faq', 'link_rule', 'index'];
 
     private const AI_STEPS = ['meta', 'content', 'faq'];
 
@@ -61,6 +61,7 @@ class RankBooster
         protected ContentSanitizer $sanitizer,
         protected IndexingService $indexing,
         protected LinkApplier $links,
+        protected KeywordBlogWriter $home,
     ) {}
 
     // ---------- sayfa ----------
@@ -89,7 +90,12 @@ class RankBooster
 
     private function pageUrl(SeoKeyword $keyword): ?string
     {
-        return $keyword->target?->url ? PathNormalizer::normalize($keyword->target->url) : null;
+        if ($keyword->target?->url) {
+            return PathNormalizer::normalize($keyword->target->url);
+        }
+
+        // Sayfasız kelime için yazılan blog yazısı: iç link kuralı ve bildirim ona yapılır.
+        return $keyword->ownerBlog ? PathNormalizer::normalize($keyword->ownerBlog->path()) : null;
     }
 
     /** Aynı sayfayı hedefleyen kelimeler arasında başlığın sahibi: en çok gösterim alan. */
@@ -119,8 +125,8 @@ class RankBooster
         return match (true) {
             $keyword->campaign_status === SeoKeyword::CAMPAIGN_PAUSED => 'Kampanya duraklatıldı.',
             $keyword->campaign_status === SeoKeyword::CAMPAIGN_WON || $keyword->reachedTarget() => 'Kelime hedefte (ilk '.$keyword->targetPosition().'). Hedefteki kelimeye işlem yapılmaz.',
-            $keyword->owner_blog_id !== null => 'Kelime bir blog yazısına ait; blog yazıları buradan düzenlenmez.',
-            $this->page($keyword) === null => 'Kelimeye bağlı yayında bir ilçe, il veya hizmet sayfası yok. "Sayfaya bağla" ile seçin.',
+            $this->page($keyword) === null && $keyword->owner_blog_id === null && $this->home->serviceTarget($keyword) === null
+                && ($reason = $this->home->unavailableReason()) !== null => 'Kelimeye bağlı yayında bir ilçe, il veya hizmet sayfası yok ve blog yazısı yazılamıyor ('.$reason.'). "Sayfaya bağla" ile seçin.',
             default => null,
         };
     }
@@ -137,7 +143,21 @@ class RankBooster
         $out = [];
 
         foreach (self::STEPS as $step) {
-            if (! $page && $step !== 'link_rule') {
+            if ($step === 'blog') {
+                $out[$step] = $this->diagnoseHome($keyword, $page);
+
+                continue;
+            }
+
+            if (! $page && in_array($step, self::AI_STEPS, true)) {
+                $out[$step] = ['state' => 'blocked', 'reason' => $keyword->owner_blog_id
+                    ? 'Blog yazısında yapıldı'
+                    : 'Bağlı sayfa yok'];
+
+                continue;
+            }
+
+            if (! $page && $step === 'index' && ! $url) {
                 $out[$step] = ['state' => 'blocked', 'reason' => 'Bağlı sayfa yok'];
 
                 continue;
@@ -159,6 +179,29 @@ class RankBooster
         }
 
         return $out;
+    }
+
+    /** Sayfasız kelimeye ev: önce uygun hizmet sayfası, yoksa kelimeye özel blog yazısı. */
+    private function diagnoseHome(SeoKeyword $keyword, ?Model $page): array
+    {
+        if ($page) {
+            return ['state' => 'blocked', 'reason' => 'Kelimenin yazılabilir sayfası var'];
+        }
+
+        if ($keyword->ownerBlog) {
+            return ['state' => 'done', 'reason' => 'Blog yazısı: '.$keyword->ownerBlog->path()];
+        }
+
+        if ($target = $this->home->serviceTarget($keyword)) {
+            return ['state' => 'todo', 'reason' => 'Hizmet sayfasına bağlanır: '.$target->url];
+        }
+
+        if ($reason = $this->home->unavailableReason()) {
+            return ['state' => 'blocked', 'reason' => $reason];
+        }
+
+        return ['state' => 'todo', 'reason' => 'Kelimeye özel blog yazısı yazılır; içine '
+            .count($this->home->moneyLinks($keyword)).' iç link (il × hizmet, hizmet, marka sayfaları) eklenir'];
     }
 
     private function diagnoseMeta(SeoKeyword $keyword, Model $page, string $url): array
@@ -317,6 +360,7 @@ class RankBooster
 
         try {
             [$message, $before, $after] = match ($step) {
+                'blog' => $this->writeHome($keyword),
                 'meta' => $this->writeMeta($keyword, $page),
                 'content' => $this->writeContent($keyword, $page),
                 'faq' => $this->writeFaq($keyword, $page),
@@ -331,6 +375,10 @@ class RankBooster
             AutomationLog::error('seo.opportunity.'.$step, $e->getMessage(), ['keyword' => $keyword->keyword]);
         }
 
+        if ($step === 'blog') {
+            $url = $this->pageUrl($keyword);
+        }
+
         return SeoKeywordAction::create([
             'keyword_id' => $keyword->getKey(),
             'action' => $step,
@@ -341,6 +389,23 @@ class RankBooster
             'rank_before' => $keyword->last_position,
             'page_url' => $url,
         ]);
+    }
+
+    /** @return array{0: string, 1: array, 2: array} */
+    private function writeHome(SeoKeyword $keyword): array
+    {
+        $before = ['target_id' => $keyword->target_id, 'owner_blog_id' => $keyword->owner_blog_id];
+
+        if ($target = $this->home->serviceTarget($keyword)) {
+            $keyword->forceFill(['target_id' => $target->getKey()])->save();
+            $keyword->unsetRelation('target');
+
+            return ['Hizmet sayfasına bağlandı: '.$target->url, $before, ['target_id' => $target->getKey()]];
+        }
+
+        ['blog' => $blog, 'links' => $links] = $this->home->write($keyword);
+
+        return ['Blog yazısı yayınlandı: '.$blog->path().' · '.$links.' iç link', $before, ['owner_blog_id' => $blog->getKey()]];
     }
 
     /** @return array{0: string, 1: array, 2: array} */

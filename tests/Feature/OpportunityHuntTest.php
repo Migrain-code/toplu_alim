@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\OpportunityHunt;
+use App\Models\Blog;
+use App\Models\Brand;
 use App\Models\InternalLinkRule;
 use App\Models\Province;
 use App\Models\SeoKeyword;
@@ -461,5 +463,70 @@ class OpportunityHuntTest extends TestCase
         $this->assertNull($this->keyword('toplu telefon alanlar')->region);
         $this->assertNotNull($this->keyword('toptanelektronikalimi')?->campaign_status, 'İş terimi şartı kapalıyken marka sorgusu da girer.');
         $this->assertSame($this->canakkaleTarget()->id, $this->keyword('çanakkale toplu laptop alanlar')->target_id);
+    }
+
+    private function pagelessKeyword(string $text, ?int $targetId = null): SeoKeyword
+    {
+        return SeoKeyword::create([
+            'keyword' => $text, 'keyword_type' => 'COMMERCIAL_VARIANT', 'status' => true,
+            'campaign_status' => SeoKeyword::CAMPAIGN_ACTIVE, 'target_position' => 3,
+            'last_position' => 12.0, 'gsc_impressions' => 5, 'target_id' => $targetId,
+        ]);
+    }
+
+    /** Canlıda "toplu playstation" marka sayfasına bağlıydı; Yükselt "bağlı sayfa yok" diye takılıyordu. */
+    public function test_pageless_brand_keyword_gets_a_published_blog_post_with_internal_links(): void
+    {
+        $this->fake([]);
+        Brand::query()->where('slug', 'playstation')->update(['is_active' => true, 'service_id' => null]);
+        app(TargetSynchroniser::class)->sync();
+        $brandTarget = SeoTarget::query()->where('url_hash', PathNormalizer::hash('/markalar/playstation'))->first();
+        $keyword = $this->pagelessKeyword('toplu playstation', $brandTarget?->id);
+
+        $booster = app(RankBooster::class);
+        $this->assertNull($booster->blocker($keyword), 'Sayfasız kelime artık takılmamalı.');
+        $this->assertSame('todo', $booster->diagnose($keyword)['blog']['state']);
+
+        $result = $booster->boost($keyword);
+
+        $this->assertContains('blog', $result['ran']);
+        $keyword->refresh();
+        $blog = $keyword->ownerBlog;
+        $this->assertNotNull($blog, 'Kelime yazıya bağlanmalı.');
+        $this->assertNull($keyword->target_id);
+        $this->assertTrue($blog->is_published);
+        $this->get($blog->path())->assertOk()->assertSee('href="/markalar/playstation"', false);
+        $this->assertSame('toplu playstation', $blog->primary_keyword);
+
+        // Para sayfalarına iç link: marka, büyük il × hizmet ve hizmet sayfası.
+        $this->assertStringContainsString('href="/markalar/playstation"', $blog->body_html);
+        $this->assertMatchesRegularExpression('#href="/istanbul/[a-z-]+"#', $blog->body_html);
+        $this->assertGreaterThanOrEqual(4, substr_count($blog->body_html, '<li><a href="/'));
+
+        // Sonraki adımlar (iç link kuralı, bildirim) artık blog adresine yapılır.
+        $this->assertSame('done', $booster->diagnose($keyword)['blog']['state']);
+        $this->assertDatabaseHas('seo_keyword_actions', ['keyword_id' => $keyword->id, 'action' => 'blog', 'status' => 'done']);
+    }
+
+    public function test_keyword_that_clearly_matches_a_service_is_bound_to_it_instead_of_a_new_blog(): void
+    {
+        $this->fake([]);
+        $keyword = $this->pagelessKeyword('toplu tablet satmak');
+
+        app(RankBooster::class)->boost($keyword);
+
+        $keyword->refresh();
+        $this->assertNull($keyword->owner_blog_id, 'Hizmet sayfası varken aynı konuya blog açılmaz.');
+        $this->assertSame('service', $keyword->target?->content_type);
+        $this->assertSame(0, Blog::query()->where('primary_keyword', 'toplu tablet satmak')->count());
+    }
+
+    public function test_blog_fallback_can_be_turned_off(): void
+    {
+        $this->fake([]);
+        SeoConfig::set('opportunity_blog_fallback', false);
+        $keyword = $this->pagelessKeyword('toplu playstation');
+
+        $this->assertStringContainsString('blog yazısı yazılamıyor', (string) app(RankBooster::class)->blocker($keyword));
     }
 }
