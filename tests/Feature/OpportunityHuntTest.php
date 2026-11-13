@@ -431,4 +431,35 @@ class OpportunityHuntTest extends TestCase
 
         $this->assertDatabaseHas('command_runs', ['command_key' => 'opportunities']);
     }
+
+    /** Yeni sitede veri az: kullanıcı filtreleri kapatıp GSC'de ne varsa görmek istedi. */
+    public function test_filters_can_be_turned_off_from_the_panel(): void
+    {
+        $this->fake([
+            ['toplu telefon alanlar', 9.0, 1, '/toplu-telefon-alimi'],
+            ['toptanelektronikalimi', 1.0, 2, '/'],
+            ['çanakkale toplu laptop alanlar', 6.0, 1],
+        ]);
+        $this->actingAs(User::where('email', 'admin@example.com')->firstOrFail());
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        // Varsayılan filtrelerle (en az 3 gösterim, bölge + iş terimi) hiçbiri girmez.
+        app(OpportunityHunter::class)->run();
+        $this->assertNull($this->keyword('toplu telefon alanlar')?->campaign_status);
+        $this->assertNull($this->keyword('çanakkale toplu laptop alanlar')?->campaign_status);
+
+        Livewire::test(OpportunityHunt::class)
+            ->callAction('filters', data: [
+                'min_impressions' => 1, 'max_position' => 100,
+                'require_region' => false, 'require_business' => false, 'max_new' => 100,
+            ])
+            ->assertNotified('Filtreler kaydedildi');
+
+        app(OpportunityHunter::class)->run();
+
+        $this->assertSame(SeoKeyword::CAMPAIGN_ACTIVE, $this->keyword('toplu telefon alanlar')->campaign_status);
+        $this->assertNull($this->keyword('toplu telefon alanlar')->region);
+        $this->assertNotNull($this->keyword('toptanelektronikalimi')?->campaign_status, 'İş terimi şartı kapalıyken marka sorgusu da girer.');
+        $this->assertSame($this->canakkaleTarget()->id, $this->keyword('çanakkale toplu laptop alanlar')->target_id);
+    }
 }

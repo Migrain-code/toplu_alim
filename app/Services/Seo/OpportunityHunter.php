@@ -145,6 +145,25 @@ class OpportunityHunter
         return $best[1] ?? null;
     }
 
+    /**
+     * Bölge adı geçmeyen sorgu için sahte "bölge": Google'ın o sorguda gösterdiği sayfa.
+     * Kelime o sayfaya bağlanır; sayfa takipte değilse bağsız kalır.
+     */
+    private function pageRegion(?string $page): array
+    {
+        $path = $page ? PathNormalizer::normalize($page) : null;
+
+        return [
+            'name' => null,
+            'fold' => '',
+            'url' => $path,
+            'label' => 'bölgesiz'.($path ? ' · '.$path : ''),
+            'type' => 'none',
+            'focus' => false,
+            'target_id' => $path ? SeoTarget::query()->where('url_hash', PathNormalizer::hash($path))->where('status', true)->value('id') : null,
+        ];
+    }
+
     /** Sorgu işimizle mi ilgili? Kelime başında eşleşir: "masa" eşleşir, "kamasa" eşleşmez. */
     public function isBusiness(string $query): bool
     {
@@ -242,18 +261,32 @@ class OpportunityHunter
     {
         $minImpressions = SeoConfig::int('opportunity_min_impressions', 3, 1, 1000);
         $maxPosition = SeoConfig::int('opportunity_max_position', 60, 4, 100);
-        $cap = SeoConfig::int('opportunity_max_new_per_run', 30, 1, 200);
+        $cap = SeoConfig::int('opportunity_max_new_per_run', 30, 1, 500);
+        // Panelden kapatılabilir (Kelime Sırası → Filtreler): yeni sitede veri azken
+        // bölge/iş terimi içermeyen sorgular da görünsün diye.
+        $requireRegion = SeoConfig::bool('opportunity_require_region', true);
+        $requireBusiness = SeoConfig::bool('opportunity_require_business', true);
         $index = $this->keywordIndex();
 
         $candidates = [];
 
         foreach ($rows as $fold => $row) {
-            if ($row['impressions'] < $minImpressions || $row['position'] > $maxPosition || ! $this->isBusiness($row['keyword'])) {
+            if ($row['impressions'] < $minImpressions || $row['position'] > $maxPosition) {
                 continue;
             }
 
-            if (! $region = $this->matchRegion($row['keyword'])) {
+            if ($requireBusiness && ! $this->isBusiness($row['keyword'])) {
                 continue;
+            }
+
+            $region = $this->matchRegion($row['keyword']);
+
+            if (! $region) {
+                if ($requireRegion) {
+                    continue;
+                }
+
+                $region = $this->pageRegion($row['page']);
             }
 
             $existing = $index[$fold] ?? null;

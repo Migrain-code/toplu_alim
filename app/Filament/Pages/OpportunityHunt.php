@@ -19,6 +19,7 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
@@ -171,6 +172,45 @@ class OpportunityHunt extends Page implements HasTable
                         : 'Search Console bağlı değil; yalnız odak bölge kelimeleri takibe alındı ('.$s['seeded'].' yeni).';
 
                     Notification::make()->title('Fırsat avı tamamlandı')->body($body)->success()->send();
+                }),
+
+            Action::make('filters')
+                ->label('Filtreler')
+                ->color('gray')
+                ->icon('heroicon-o-funnel')
+                ->visible(fn () => self::canEdit())
+                ->modalHeading('Fırsat avı filtreleri')
+                ->modalDescription('Search Console sorgularından hangilerinin bu listeye alınacağını belirler. '
+                    .'Değişiklik sonraki "Tüm Sıraları Kontrol Et" turunda uygulanır. Kapatınca listeye girmiş kelimeler '
+                    .'tekrar açınca silinmez. Otomatik iyileştirme açıksa, bölgesiz kelimeler için de sayfa metni yazılır; '
+                    .'yalnız veri görmek istiyorsanız "Otomasyonu Kapat" ile durdurun.')
+                ->fillForm(fn () => [
+                    'min_impressions' => SeoConfig::int('opportunity_min_impressions', 3, 1, 1000),
+                    'max_position' => SeoConfig::int('opportunity_max_position', 60, 4, 100),
+                    'require_region' => SeoConfig::bool('opportunity_require_region', true),
+                    'require_business' => SeoConfig::bool('opportunity_require_business', true),
+                    'max_new' => SeoConfig::int('opportunity_max_new_per_run', 30, 1, 500),
+                ])
+                ->schema([
+                    TextInput::make('min_impressions')->label('En az gösterim')->numeric()->minValue(1)->maxValue(1000)->required()
+                        ->helperText('1 = filtre kapalı: tek bir gösterim alan sorgu da listeye girer.'),
+                    TextInput::make('max_position')->label('En kötü sıra')->numeric()->minValue(4)->maxValue(100)->required()
+                        ->helperText('Bu sıradan daha geride çıkan sorgular alınmaz. 100 = hepsi.'),
+                    Toggle::make('require_region')->label('Sorguda il/ilçe adı geçsin')
+                        ->helperText('Kapalıyken "toplu telefon alımı" gibi bölgesiz sorgular da alınır; Google\'ın gösterdiği sayfaya bağlanır.'),
+                    Toggle::make('require_business')->label('Sorguda iş terimi geçsin (alım, toptan, stok…)')
+                        ->helperText('Kapalıyken marka adı vb. tüm sorgular alınır.'),
+                    TextInput::make('max_new')->label('Tur başına en fazla yeni kelime')->numeric()->minValue(1)->maxValue(500)->required(),
+                ])
+                ->action(function (array $data) {
+                    SeoConfig::set('opportunity_min_impressions', (int) $data['min_impressions']);
+                    SeoConfig::set('opportunity_max_position', (int) $data['max_position']);
+                    SeoConfig::set('opportunity_require_region', (bool) $data['require_region']);
+                    SeoConfig::set('opportunity_require_business', (bool) $data['require_business']);
+                    SeoConfig::set('opportunity_max_new_per_run', (int) $data['max_new']);
+
+                    Notification::make()->title('Filtreler kaydedildi')
+                        ->body('Yeni kelimeler için "Tüm Sıraları Kontrol Et" düğmesine basın.')->success()->send();
                 }),
 
             Action::make('add')
